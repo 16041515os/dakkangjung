@@ -359,27 +359,40 @@ load (const char *file_name, void (**eip) (void), void **esp)
   int posi;
 
   printf("@@@@@@@@@@@@@@@@\n");
+  printf("%05x\n",(int)*esp);
   argv_address = (char**)malloc(sizeof(char*)*arg_cnt);
   *esp -= command_len;
 
   posi = (int)*esp;
 
-  printf("\n\n%d\n\n",posi);
-
+  printf("\n##%05x\n",(int)*esp);
+  
   for(i = 0; i < arg_cnt; i++){
-    for(j = 0; j<=(int)strlen(argv[i]); j++){
       argv_address[i] = *esp;
+    for(j = 0; j<=strlen(argv[i]); j++){
       *(char*)(*esp) = argv[i][j];
+      //printf("%c",*(char*)(*esp));
       *esp = *esp + 1;
     }
   }
 
+//  hex_dump(posi,posi,100,1);
   *esp = (void *)posi;
 
-  while(((int)(*esp))%4 != 0){
-    *esp = *esp - 1;
-    *(int*)(*esp) = 0;
+
+  printf("\n##%05x\n",(int)*esp);
+
+  void *temp = *esp;
+  *esp = (void *)(((uint32_t)*esp >> 2) << 2);
+  while(*esp < posi) {
+    *esp++ = 0;
   }
+  *esp = temp - 1;
+
+  /*while(((int)(*esp))%4 != 0){
+    *esp = *esp - 1;
+    *(int*)(*esp) = '/';
+  }*/
 
   *esp -= 4;
   memset(*esp, 0, sizeof(char*));
@@ -388,10 +401,13 @@ load (const char *file_name, void (**eip) (void), void **esp)
     *esp -= 4;
     //memcpy(*esp, &*(argv_address[i]),sizeof(char*));
     *(void**)(*esp) = argv_address[i];
+    printf("^^%05x\n", *(char*)(*esp));
   }
 
   *esp -= 4;
   *(void**)(*esp) = (*esp) + 4;
+
+  printf("((%05x\n",*(void**)(*esp));
 
   *esp -= 4;
   *(int*)(*esp) = arg_cnt;
@@ -399,8 +415,10 @@ load (const char *file_name, void (**eip) (void), void **esp)
   *esp -= 4;
   *(int*)(*esp) = 0;
 
+  printf("%05x\n",(int)*esp);
   printf("%s\n\n\n", argv[0]);
 
+  hex_dump(*esp,*esp,100,1);
   free(argv_address);
 
   /*for (i = 1; i < arg_cnt; i++){
@@ -477,7 +495,7 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
      it then user code that passed a null pointer to system calls
      could quite likely panic the kernel by way of null pointer
      assertions in memcpy(), etc. */
-  if (phdr->p_offset < PGSIZE)
+  if (phdr->p_vaddr < PGSIZE)
     return false;
 
   /* It's okay. */
