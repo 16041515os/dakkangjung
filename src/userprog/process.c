@@ -50,8 +50,6 @@ process_execute (const char *file_name)
   fn_str = strtok_r(fn_str, tok, &saveptr);//****파일이름만 파싱******//
   printf("##%s\n", fn_str);
 
-  if(filesys_open(fn_str) == NULL) return -1;
-
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (fn_str, PRI_DEFAULT, start_process, fn_copy);
 
@@ -245,7 +243,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
   int arg_cnt = 0;
   int command_len = 0;
 
-  printf("####################\n");
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create ();
   if (t->pagedir == NULL) 
@@ -264,7 +261,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
   }
 
   file_name = argv[0];
-  printf("%s\n", argv[1]);
   /////////////////////////////////////////////////
 
   /* Open executable file. */
@@ -358,15 +354,11 @@ load (const char *file_name, void (**eip) (void), void **esp)
   char** argv_address;
   int posi;
 
-  printf("@@@@@@@@@@@@@@@@\n");
-  printf("%05x\n",(int)*esp);
   argv_address = (char**)malloc(sizeof(char*)*arg_cnt);
   *esp -= command_len;
 
   posi = (int)*esp;
 
-  printf("\n##%05x\n",(int)*esp);
-  
   for(i = 0; i < arg_cnt; i++){
       argv_address[i] = *esp;
     for(j = 0; j<=strlen(argv[i]); j++){
@@ -379,13 +371,11 @@ load (const char *file_name, void (**eip) (void), void **esp)
 //  hex_dump(posi,posi,100,1);
   *esp = (void *)posi;
 
-
-  printf("\n##%05x\n",(int)*esp);
-
   void *temp = *esp;
   *esp = (void *)(((uint32_t)*esp >> 2) << 2);
   while(*esp < posi) {
-    *esp++ = 0;
+    **(uint8_t **)esp = 0;
+    (*esp)++;
   }
   *esp = temp - 1;
 
@@ -401,13 +391,10 @@ load (const char *file_name, void (**eip) (void), void **esp)
     *esp -= 4;
     //memcpy(*esp, &*(argv_address[i]),sizeof(char*));
     *(void**)(*esp) = argv_address[i];
-    printf("^^%05x\n", *(char*)(*esp));
   }
 
   *esp -= 4;
   *(void**)(*esp) = (*esp) + 4;
-
-  printf("((%05x\n",*(void**)(*esp));
 
   *esp -= 4;
   *(int*)(*esp) = arg_cnt;
@@ -415,33 +402,9 @@ load (const char *file_name, void (**eip) (void), void **esp)
   *esp -= 4;
   *(int*)(*esp) = 0;
 
-  printf("%05x\n",(int)*esp);
-  printf("%s\n\n\n", argv[0]);
-
   hex_dump(*esp,*esp,100,1);
   free(argv_address);
 
-  /*for (i = 1; i < arg_cnt; i++){
-    int fd = open (argv[i]);
-    if (fd < 0) 
-    {
-      printf ("%s: open failed\n", argv[i]);
-      success = false;
-      continue;
-    }
-    for (;;) 
-    {
-      char buffer[1024];
-      int pos = tell (fd);
-      int bytes_read = read (fd, buffer, sizeof buffer);
-      if (bytes_read == 0)
-        break;
-      hex_dump (pos, buffer, bytes_read, true);
-    }
-    close (fd);
-  }*/
-
-  printf("33333333*************\n");
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
 
