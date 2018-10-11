@@ -19,8 +19,6 @@
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
 
-#define arg_num 20 //argument 개수
-
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
@@ -37,7 +35,7 @@ process_execute (const char *file_name)
   char *saveptr = NULL;
   tid_t tid;
 
-  fn_str = (char*)malloc(sizeof(char)*40);
+  fn_str = (char*)malloc(sizeof(char)*4096);
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
   fn_copy = palloc_get_page (0);
@@ -50,8 +48,8 @@ process_execute (const char *file_name)
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (fn_str, PRI_DEFAULT, start_process, fn_copy);
+  free(fn_str);
 
-  printf("@@@@@@@@@@@2\n");
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
   return tid;
@@ -76,7 +74,7 @@ start_process (void *file_name_)
   /* If load failed, quit. */
   palloc_free_page (file_name);
   if (!success) 
-    thread_exit ();
+    thread_exit (-1);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -102,9 +100,9 @@ process_wait (tid_t child_tid UNUSED)
 {
  // while(1){}//*****임시적인 방법*******///
   
-  int i;
+  volatile long long i;
 
-  for(i = 0; i < 1000000000; i++);
+  for(i = 0; i < 100000000LL; i++);
   return -1;
 }
 
@@ -233,7 +231,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   int i,j;
 
   char* res, *save_ptr;
-  char* argv[arg_num];
+  char **argv;
   char tok[] = " \t\n";
   int arg_cnt = 0;
   int command_len = 0;
@@ -248,11 +246,19 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
   //***********parsing filename for arg**********//
   res = strtok_r((char*)file_name, tok, &save_ptr);
-
   while(res != NULL){
-    argv[arg_cnt] = res;
     res = strtok_r(NULL, tok, &save_ptr);
     arg_cnt++;
+  }
+  argv = malloc(sizeof(char *) * arg_cnt);
+
+  argv[0] = file_name;
+  j = 0;
+  for(i=1; i<arg_cnt; ++i) {
+    char ch;
+    while(file_name[j] != 0) ++j;
+    while((ch = file_name[j]) == 0 || ch == ' ' || ch == '\t' || ch == '\n') ++j;
+    argv[i] = file_name + j;
   }
 
   file_name = argv[0];
@@ -347,16 +353,22 @@ load (const char *file_name, void (**eip) (void), void **esp)
   /////////////////////////////////////////////////
 
   char** argv_address;
-  int posi;
+  void *posi;
 
   argv_address = (char**)malloc(sizeof(char*)*arg_cnt);
   *esp -= command_len;
 
-  posi = (int)*esp;
+  posi = *esp;
 
   for(i = 0; i < arg_cnt; i++){
-      argv_address[i] = *esp;
-    for(j = 0; j<=strlen(argv[i]); j++){
+    ;
+    j = 99;
+    argv_address[i] = *esp;
+    j = 99;
+    int len = strlen(argv[i]);
+    j = 99;
+    ;
+    for(j = 0; j<=len; j++){
       *(char*)(*esp) = argv[i][j];
       //printf("%c",*(char*)(*esp));
       *esp = *esp + 1;
@@ -364,7 +376,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   }
 
 //  hex_dump(posi,posi,100,1);
-  *esp = (void *)posi;
+  *esp = posi;
 
   void *temp = *esp;
   *esp = (void *)(((uint32_t)*esp >> 2) << 2);
@@ -399,7 +411,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
  // printf("*****%05x\n", *esp);
  // hex_dump(*esp,*esp,100,1);
-  free(argv_address);
 
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
@@ -408,6 +419,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
 done:
   /* We arrive here whether the load is successful or not. */
+  free(argv_address);
+  free(argv);
   file_close (file);
   return success;
 }
