@@ -46,16 +46,12 @@ process_execute (const char *file_name)
   strlcpy (fn_copy, file_name, PGSIZE);
 
   strlcpy(fn_str, fn_copy, PGSIZE);
-  printf("*****%s\n", fn_copy);
   fn_str = strtok_r(fn_str, tok, &saveptr);//****파일이름만 파싱******//
-  printf("##%s\n", fn_str);
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (fn_str, PRI_DEFAULT, start_process, fn_copy);
 
-  
-  printf("222222222*******************\n");
-
+  printf("@@@@@@@@@@@2\n");
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
   return tid;
@@ -70,7 +66,6 @@ start_process (void *file_name_)
   struct intr_frame if_;
   bool success;
 
-  printf("555555555555555555\n");
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
@@ -105,11 +100,11 @@ start_process (void *file_name_)
   int
 process_wait (tid_t child_tid UNUSED) 
 {
- while(1){}//*****임시적인 방법*******///
+ // while(1){}//*****임시적인 방법*******///
   
-  /*int i;
+  int i;
 
-  for(i = 0; i < 1000000000; i++);*/
+  for(i = 0; i < 1000000000; i++);
   return -1;
 }
 
@@ -402,7 +397,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
   *esp -= 4;
   *(int*)(*esp) = 0;
 
-  hex_dump(*esp,*esp,100,1);
+ // printf("*****%05x\n", *esp);
+ // hex_dump(*esp,*esp,100,1);
   free(argv_address);
 
   /* Start address. */
