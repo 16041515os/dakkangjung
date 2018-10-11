@@ -117,7 +117,7 @@ void halt(void){
 
 void exit(int status){//parent, child 구분해서 구현해야됌
 
-  thread_exit();
+  thread_exit(status);
 }
 
 pid_t exec(const char *cmd_line){
