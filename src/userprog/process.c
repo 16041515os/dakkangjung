@@ -352,7 +352,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   /************Do construct stack****************/
   /////////////////////////////////////////////////
 
-  char** argv_address;
+  char** argv_address = NULL;
   void *posi;
 
   argv_address = (char**)malloc(sizeof(char*)*arg_cnt);
@@ -361,13 +361,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
   posi = *esp;
 
   for(i = 0; i < arg_cnt; i++){
-    ;
-    j = 99;
     argv_address[i] = *esp;
-    j = 99;
     int len = strlen(argv[i]);
-    j = 99;
-    ;
     for(j = 0; j<=len; j++){
       *(char*)(*esp) = argv[i][j];
       //printf("%c",*(char*)(*esp));
