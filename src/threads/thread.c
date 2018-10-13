@@ -99,10 +99,6 @@ thread_init (void)
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
 
-  /* ~PINTOS~ */
-#ifdef USERPROG
-  initial_thread->ptid = 0;     // indicate root process
-#endif
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.

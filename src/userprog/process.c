@@ -30,6 +30,13 @@ static struct exit_record {
   int32_t exit_status;
 } exit_table[MAX_TID+1];    // zero-initialized
 
+#define FILE_NAME_POS(arg) ((char *)(arg + 1))
+struct start_process_arg {
+  tid_t tid;
+  bool load_done;
+  bool load_success;
+};
+
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -38,7 +45,7 @@ tid_t
 process_execute (const char *file_name) 
 {
   char *fn_copy;
-  void *start_process_arg;
+  volatile struct start_process_arg *arg;
 
   char tok[] = " \t\n";
   char *fn_str;
@@ -48,45 +55,54 @@ process_execute (const char *file_name)
   fn_str = (char*)malloc(sizeof(char)*4096);
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
-  start_process_arg = palloc_get_page (0);
-  if (start_process_arg == NULL)
+  arg = palloc_get_page (0);
+  if (arg == NULL)
     return TID_ERROR;
 
-  *(tid_t *)start_process_arg = thread_tid();
-  fn_copy = (char *)((tid_t *)start_process_arg + 1);
+  arg->tid = thread_tid();
+  arg->load_done = arg->load_success = false;
+  fn_copy = FILE_NAME_POS(arg);
+
   strlcpy (fn_copy, file_name, PGSIZE);
 
   strlcpy(fn_str, fn_copy, PGSIZE);
   fn_str = strtok_r(fn_str, tok, &saveptr);//****파일이름만 파싱******//
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (fn_str, PRI_DEFAULT, start_process, start_process_arg);
+  tid = thread_create (fn_str, PRI_DEFAULT, start_process, (void *)arg);
   free(fn_str);
 
-  if (tid == TID_ERROR)
-    palloc_free_page (start_process_arg); 
-  else {
+  if(tid != TID_ERROR) {
     ASSERT(tid <= MAX_TID);
 
-    struct exit_record *rec = &exit_table[tid];
-    rec->created = true;
-    rec->terminated = false;
-    rec->waited = false;
-    rec->ptid = thread_tid();
+    while(!arg->load_done);
+    if(!arg->load_success) {
+      tid = -1;
+    }
+    else {
+      struct exit_record *rec = &exit_table[tid];
+      rec->created = true;
+      rec->terminated = false;
+      rec->waited = false;
+      rec->ptid = thread_tid();
+    }
   }
+
+  palloc_free_page ((void *)arg); 
   return tid;
 }
 
 /* A thread function that loads a user process and starts it
    running. */
 static void
-start_process (void *arg)
+start_process (void *_arg)
 {
-
+  volatile struct start_process_arg *arg = _arg;
   struct thread *thread = thread_current();
-  thread->ptid = *(tid_t *)arg;
+  thread->ptid = arg->tid;
 
-  char *file_name = (char *)((tid_t *)arg + 1);
+  char *file_name = FILE_NAME_POS(arg);
+
   struct intr_frame if_;
   bool success;
 
@@ -96,9 +112,10 @@ start_process (void *arg)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (file_name, &if_.eip, &if_.esp);
+  arg->load_success = success;
+  arg->load_done = true;
 
   /* If load failed, quit. */
-  palloc_free_page (arg);
   if (!success) 
     thread_exit (-1);
 
@@ -124,7 +141,7 @@ start_process (void *arg)
   int
 process_wait (tid_t child_tid) 
 {
-  if(child_tid > MAX_TID) return -1;
+  if(child_tid > MAX_TID || child_tid <= 2) return -1;
 
   volatile struct exit_record *rec = &exit_table[child_tid];
 
@@ -271,6 +288,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
   char* res, *save_ptr;
   char **argv = NULL;
+  char** argv_address = NULL;
   char tok[] = " \t\n";
   int arg_cnt = 0;
   int command_len = 0;
@@ -391,7 +409,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
   /************Do construct stack****************/
   /////////////////////////////////////////////////
 
-  char** argv_address = NULL;
   void *posi;
 
   argv_address = (char**)malloc(sizeof(char*)*arg_cnt);
