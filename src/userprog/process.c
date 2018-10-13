@@ -22,14 +22,24 @@
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
+/* ~PINTOS~ */
+#define MAX_TID 1023
+static struct exit_record {
+  bool created, terminated, waited;
+  tid_t ptid;
+  int32_t exit_status;
+} exit_table[MAX_TID+1];    // zero-initialized
+
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
    thread id, or TID_ERROR if the thread cannot be created. */
-  tid_t
+tid_t
 process_execute (const char *file_name) 
 {
   char *fn_copy;
+  void *start_process_arg;
+
   char tok[] = " \t\n";
   char *fn_str;
   char *saveptr = NULL;
@@ -38,29 +48,45 @@ process_execute (const char *file_name)
   fn_str = (char*)malloc(sizeof(char)*4096);
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
-  fn_copy = palloc_get_page (0);
-  if (fn_copy == NULL)
+  start_process_arg = palloc_get_page (0);
+  if (start_process_arg == NULL)
     return TID_ERROR;
+
+  *(tid_t *)start_process_arg = thread_tid();
+  fn_copy = (char *)((tid_t *)start_process_arg + 1);
   strlcpy (fn_copy, file_name, PGSIZE);
 
   strlcpy(fn_str, fn_copy, PGSIZE);
   fn_str = strtok_r(fn_str, tok, &saveptr);//****파일이름만 파싱******//
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (fn_str, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (fn_str, PRI_DEFAULT, start_process, start_process_arg);
   free(fn_str);
 
   if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
+    palloc_free_page (start_process_arg); 
+  else {
+    ASSERT(tid <= MAX_TID);
+
+    struct exit_record *rec = &exit_table[tid];
+    rec->created = true;
+    rec->terminated = false;
+    rec->waited = false;
+    rec->ptid = thread_tid();
+  }
   return tid;
 }
 
 /* A thread function that loads a user process and starts it
    running. */
-  static void
-start_process (void *file_name_)
+static void
+start_process (void *arg)
 {
-  char *file_name = file_name_;
+
+  struct thread *thread = thread_current();
+  thread->ptid = *(tid_t *)arg;
+
+  char *file_name = (char *)((tid_t *)arg + 1);
   struct intr_frame if_;
   bool success;
 
@@ -72,7 +98,7 @@ start_process (void *file_name_)
   success = load (file_name, &if_.eip, &if_.esp);
 
   /* If load failed, quit. */
-  palloc_free_page (file_name);
+  palloc_free_page (arg);
   if (!success) 
     thread_exit (-1);
 
@@ -96,14 +122,23 @@ start_process (void *file_name_)
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
   int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid) 
 {
- // while(1){}//*****임시적인 방법*******///
-  
-  volatile long long i;
+  if(child_tid > MAX_TID) return -1;
 
-  for(i = 0; i < 100000000LL; i++);
-  return -1;
+  volatile struct exit_record *rec = &exit_table[child_tid];
+
+  // 1. find record whose TID member has value of CHILD_TID
+  // 2. check if PTID == current thread tid
+  // 3. check if waited before
+  if(!rec->created || rec->ptid != thread_tid() || rec->waited) return -1;
+
+  // 4. check exit_status of thread of CHILD_TID (spinlock)
+  while(!rec->terminated);
+
+  // 5. as soon as exit_status is available, exit
+  rec->waited = true;
+  return rec->exit_status;
 }
 
 /* Free the current process's resources. */
@@ -112,6 +147,10 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
+
+  struct exit_record *rec = &exit_table[cur->tid];
+  rec->terminated = true;
+  rec->exit_status = cur->exit_status;
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -231,7 +270,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   int i,j;
 
   char* res, *save_ptr;
-  char **argv;
+  char **argv = NULL;
   char tok[] = " \t\n";
   int arg_cnt = 0;
   int command_len = 0;
