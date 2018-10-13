@@ -82,8 +82,6 @@ process_execute (const char *file_name)
     else {
       struct exit_record *rec = &exit_table[tid];
       rec->created = true;
-      rec->terminated = false;
-      rec->waited = false;
       rec->ptid = thread_tid();
     }
   }
@@ -100,6 +98,10 @@ start_process (void *_arg)
   volatile struct start_process_arg *arg = _arg;
   struct thread *thread = thread_current();
   thread->ptid = arg->tid;
+
+  struct exit_record *rec = &exit_table[arg->tid];
+  rec->terminated = false;
+  rec->waited = false;
 
   char *file_name = FILE_NAME_POS(arg);
 
@@ -149,7 +151,7 @@ process_wait (tid_t child_tid)
   // 2. check if PTID == current thread tid
   // 3. check if waited before
   if(!rec->created || rec->ptid != thread_tid() || rec->waited) return -1;
-
+ 
   // 4. check exit_status of thread of CHILD_TID (spinlock)
   while(!rec->terminated);
 
