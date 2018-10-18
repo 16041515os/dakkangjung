@@ -86,17 +86,17 @@ syscall_handler (struct intr_frame *f UNUSED)
 
   else if(SYSCALL_NUM == SYS_PIBONACCI){
       
-    n = (int)*(uint32_t*)(f->esp+8);
+    n = (int)*(uint32_t*)(f->esp+4);
     
     f->eax = pibonacci(n);
   }
 
   else if(SYSCALL_NUM == SYS_SUM_OF_FOUR_INTEGERS){
     
-    n1 = (int)*(uint32_t*)(f->esp+8);
-    n2 = (int)*(uint32_t*)(f->esp+12);
-    n3 = (int)*(uint32_t*)(f->esp+16);
-    n4 = (int)*(uint32_t*)(f->esp+20);
+    n1 = (int)*(uint32_t*)(f->esp+4);
+    n2 = (int)*(uint32_t*)(f->esp+8);
+    n3 = (int)*(uint32_t*)(f->esp+12);
+    n4 = (int)*(uint32_t*)(f->esp+16);
 
     f->eax = sum_of_four_integers(n1,n2,n3,n4);
   }
@@ -162,9 +162,22 @@ int write(int fd, const void* buffer, unsigned size){
 
 int pibonacci(int n){
 
-  if( n==0 || n == 1) return n;
+  int a = 1, b = 1, c = 0;
+  int i;
 
-  else return pibonacci(n-1) + pibonacci(n-2);
+  if(n < 0 || n == 1 || n == 2) return n;
+
+  else{
+
+    for(i = 0; i < n-1; i++){
+      c = a + b;
+      a = b;
+      b = c;
+    }
+
+  }
+
+  return a;
 
 }
 

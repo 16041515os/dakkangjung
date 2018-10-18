@@ -153,7 +153,7 @@ process_wait (tid_t child_tid)
   if(!rec->created || rec->ptid != thread_tid() || rec->waited) return -1;
  
   // 4. check exit_status of thread of CHILD_TID (spinlock)
-  while(!rec->terminated);
+  while(!rec->terminated) thread_yield();
 
   // 5. as soon as exit_status is available, exit
   rec->waited = true;
