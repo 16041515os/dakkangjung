@@ -11,6 +11,8 @@
 #include "filesys/file.h"
 #include "filesys/filesys.h"
 
+static struct lock file_lock;
+
 static void vaddr_check(void* addr){// check valid address
   if(!is_user_vaddr(addr)) exit(-1);
 }
@@ -21,6 +23,7 @@ void
 syscall_init (void) 
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
+  lock_init(&file_lock);
 }
 
 static void
@@ -119,16 +122,20 @@ syscall_handler (struct intr_frame *f)
     }
     else if(fd == 0) {
       unsigned i;
+      lock_acquire(&file_lock);
       for(i = 0; i < size; i++){
         buffer[i] = input_getc();
       }
+      lock_release(&file_lock);
       f->eax = size;
     }
     else {
       struct file *file = process_get_file(fd);
       if(file == NULL) thread_exit(-1);
 
+      lock_acquire(&file_lock);
       f->eax = file_read(file, buffer, size);
+      lock_release(&file_lock);
     }
   }
 
@@ -147,14 +154,18 @@ syscall_handler (struct intr_frame *f)
     }
     else if(fd == 1 /*|| fd == 2*/) {
       if(!is_user_vaddr(buffer)) thread_exit(-1);
+      lock_acquire(&file_lock);
       putbuf(buffer, size);
+      lock_release(&file_lock);
       f->eax = size;
     }
     else {
       struct file *file = process_get_file(fd);
       if(file == NULL) thread_exit(-1);
 
+      lock_acquire(&file_lock);
       f->eax = file_write(file, buffer, size);
+      lock_release(&file_lock);
     }
   }
 
