@@ -18,6 +18,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
+#include "threads/synch.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -25,16 +26,17 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
 /* ~PINTOS~ */
 #define MAX_TID 2047
 static struct exit_record {
-  bool created, terminated, waited;
+  bool created, waited;
   tid_t ptid;
   int32_t exit_status;
+  struct semaphore termintion_sema;
 } exit_table[MAX_TID+1];    // zero-initialized
 
 #define FILE_NAME_POS(arg) ((char *)(arg + 1))
 struct start_process_arg {
   tid_t tid;
-  bool load_done;
   bool load_success;
+  struct semaphore sema;
 };
 
 /* Starts a new thread running a user program loaded from
@@ -45,7 +47,7 @@ tid_t
 process_execute (const char *file_name) 
 {
   char *fn_copy;
-  volatile struct start_process_arg *arg;
+  struct start_process_arg *arg;
 
   char tok[] = " \t\n";
   char *fn_str;
@@ -60,7 +62,8 @@ process_execute (const char *file_name)
     return TID_ERROR;
 
   arg->tid = thread_tid();
-  arg->load_done = arg->load_success = false;
+  arg->load_success = false;
+  sema_init(&arg->sema, 0u);
   fn_copy = FILE_NAME_POS(arg);
 
   strlcpy (fn_copy, file_name, PGSIZE);
@@ -75,7 +78,7 @@ process_execute (const char *file_name)
   if(tid != TID_ERROR) {
     ASSERT(tid <= MAX_TID);
 
-    while(!arg->load_done) thread_yield();
+    sema_down(&arg->sema);
     if(!arg->load_success) {
       tid = -1;
     }
@@ -95,12 +98,12 @@ process_execute (const char *file_name)
 static void
 start_process (void *_arg)
 {
-  volatile struct start_process_arg *arg = _arg;
+  struct start_process_arg *arg = _arg;
   struct thread *thread = thread_current();
   thread->ptid = arg->tid;
 
-  struct exit_record *rec = &exit_table[arg->tid];
-  rec->terminated = false;
+  struct exit_record *rec = &exit_table[thread->tid];
+  sema_init(&rec->termintion_sema, 0u);
   rec->waited = false;
 
   char *file_name = FILE_NAME_POS(arg);
@@ -115,7 +118,7 @@ start_process (void *_arg)
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (file_name, &if_.eip, &if_.esp);
   arg->load_success = success;
-  arg->load_done = true;
+  sema_up(&arg->sema);
 
   /* If load failed, quit. */
   if (!success) 
@@ -145,15 +148,17 @@ process_wait (tid_t child_tid)
 {
   if(child_tid > MAX_TID || child_tid <= 2) return -1;
 
-  volatile struct exit_record *rec = &exit_table[child_tid];
+  struct exit_record *rec = &exit_table[child_tid];
 
   // 1. find record whose TID member has value of CHILD_TID
   // 2. check if PTID == current thread tid
   // 3. check if waited before
   if(!rec->created || rec->ptid != thread_tid() || rec->waited) return -1;
  
-  // 4. check exit_status of thread of CHILD_TID (spinlock)
-  while(!rec->terminated) thread_yield();
+  // 4-1. check if terminate (spinlock)
+  // while(!rec->terminated) thread_yield();
+  // 4-2. check if terminate (semaphore)
+  sema_down(&rec->termintion_sema);
 
   // 5. as soon as exit_status is available, exit
   rec->waited = true;
@@ -167,21 +172,25 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
-  struct exit_record *rec = &exit_table[cur->tid];
-  rec->terminated = true;
-  rec->exit_status = cur->exit_status;
+  // only a "process" has a parent process
+  if(cur->ptid > 0) {
+    struct exit_record *rec = &exit_table[cur->tid];
+    sema_up(&rec->termintion_sema);
+    rec->exit_status = cur->exit_status;
 
-  // cleanup file handles
-  unsigned i;
-  for(i=3; i<cur->nextfd; ++i) {
-    struct file *file = cur->fdtable[i];
-    if(file != NULL) file_close(file);
+    // cleanup file handles
+    unsigned i;
+    for(i=3; i<cur->nextfd; ++i) {
+      struct file *file = cur->fdtable[i];
+      if(file) file_close(file);
+    }
+
+    // allow writes to the executable
+    if(cur->fdtable[0]) file_close(cur->fdtable[0]);
+
+    palloc_free_page(cur->fdtable);
   }
 
-  // allow writes to the executable
-  if(cur->fdtable[0]) file_close(cur->fdtable[0]);
-
-  palloc_free_page(cur->fdtable);
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
