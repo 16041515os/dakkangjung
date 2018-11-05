@@ -7,6 +7,7 @@ int main(int argc, char** argv){
   int num1,num2,num3,num4;
   int res1 = 0, res2 = 0;
 
+
   if(argc == 5){
     num1 = atoi(argv[1]); 
     num2 = atoi(argv[2]);

@@ -464,8 +464,6 @@ is_thread (struct thread *t)
 static void
 init_thread (struct thread *t, const char *name, int priority)
 {
-
-  int i;
   ASSERT (t != NULL);
   ASSERT (PRI_MIN <= priority && priority <= PRI_MAX);
   ASSERT (name != NULL);
@@ -477,13 +475,6 @@ init_thread (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->magic = THREAD_MAGIC;
   list_push_back (&all_list, &t->allelem);
-
-  /** project 2 **/
-  for(i = 3; i < 128; i++){
-    t->FD[i] = NULL;
-  }
-
-  t -> fd_limit = 3;
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and

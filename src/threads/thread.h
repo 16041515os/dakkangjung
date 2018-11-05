@@ -104,11 +104,6 @@ struct thread
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
-
-    /** project2 **/
-    struct file* FD[128]; //limit 128
-    int fd_limit;
-
   };
 
 /* If false (default), use round-robin scheduler.
