@@ -99,6 +99,8 @@ struct thread
 
     /* ~PINTOS~ */
     tid_t ptid;
+    void **fdtable;                 /* file descriptor table */
+    uint32_t nextfd;
     int32_t exit_status;
 #endif
 

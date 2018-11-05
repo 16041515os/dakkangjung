@@ -23,7 +23,7 @@ static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
 /* ~PINTOS~ */
-#define MAX_TID 1023
+#define MAX_TID 2047
 static struct exit_record {
   bool created, terminated, waited;
   tid_t ptid;
@@ -75,7 +75,7 @@ process_execute (const char *file_name)
   if(tid != TID_ERROR) {
     ASSERT(tid <= MAX_TID);
 
-    while(!arg->load_done);
+    while(!arg->load_done) thread_yield();
     if(!arg->load_success) {
       tid = -1;
     }
@@ -171,6 +171,17 @@ process_exit (void)
   rec->terminated = true;
   rec->exit_status = cur->exit_status;
 
+  // cleanup file handles
+  unsigned i;
+  for(i=3; i<cur->nextfd; ++i) {
+    struct file *file = cur->fdtable[i];
+    if(file != NULL) file_close(file);
+  }
+
+  // allow writes to the executable
+  if(cur->fdtable[0]) file_close(cur->fdtable[0]);
+
+  palloc_free_page(cur->fdtable);
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -190,7 +201,6 @@ process_exit (void)
 }
 
 /* Sets up the CPU for running user code in the current
-   thread.
    This function is called on every context switch. */
   void
 process_activate (void)
@@ -203,6 +213,39 @@ process_activate (void)
   /* Set thread's kernel stack for use in processing
      interrupts. */
   tss_update ();
+}
+
+int process_open_file(char const *fname) {
+  struct file *file = filesys_open(fname);
+  if(file == NULL) return -1;
+
+  struct thread *t = thread_current();
+  int fd = t->nextfd++;
+  ASSERT(fd <= FD_MAX);
+  t->fdtable[fd] = file;
+
+  return fd;
+}
+
+bool process_close_file(int fd) {
+  if(!(fd > 2 && fd <= FD_MAX)) return false;
+
+  struct thread *t = thread_current();
+  struct file *file = t->fdtable[fd];
+  if(file == NULL) return false;
+  file_close(file);
+  t->fdtable[fd] = NULL;
+  return true;
+}
+
+struct file *process_get_file(int fd) {
+  if(!(fd > 2 && fd <= FD_MAX)) return false;
+
+  struct thread *t = thread_current();
+  struct file *file = t->fdtable[fd];
+  ASSERT(file != NULL);
+
+  return file;
 }
 
 /* We load ELF binaries.  The following definitions are taken
@@ -295,6 +338,10 @@ load (const char *file_name, void (**eip) (void), void **esp)
   int arg_cnt = 0;
   int command_len = 0;
 
+  /* initialize process-specific file descriptor table */
+  t->fdtable = palloc_get_page(0);
+  t->nextfd = 3;
+
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create ();
   if (t->pagedir == NULL) 
@@ -311,13 +358,13 @@ load (const char *file_name, void (**eip) (void), void **esp)
   }
   argv = malloc(sizeof(char *) * arg_cnt);
 
-  argv[0] = file_name;
+  argv[0] = (char *)file_name;
   j = 0;
   for(i=1; i<arg_cnt; ++i) {
     char ch;
     while(file_name[j] != 0) ++j;
     while((ch = file_name[j]) == 0 || ch == ' ' || ch == '\t' || ch == '\n') ++j;
-    argv[i] = file_name + j;
+    argv[i] = (char *)(file_name + j);
   }
 
   file_name = argv[0];
@@ -474,7 +521,15 @@ done:
   /* We arrive here whether the load is successful or not. */
   free(argv_address);
   free(argv);
-  file_close (file);
+
+  /* denying writes to the executable */
+  if(success) {
+    file_deny_write(file);
+    t->fdtable[0] = file;
+  }
+  else {
+    t->fdtable[0] = NULL;
+  }
   return success;
 }
 
