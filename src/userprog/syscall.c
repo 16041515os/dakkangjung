@@ -83,7 +83,9 @@ syscall_handler (struct intr_frame *f)
     if(!is_user_vaddr(fname)) exit(-1);
     UNUSED volatile const char _ = *fname; // try access
 
+    lock_acquire(&file_lock);
     f->eax = filesys_remove(fname);
+    lock_release(&file_lock);
   }
 
   else if(SYSCALL_NUM == SYS_OPEN) {
