@@ -4,6 +4,7 @@
 #include <random.h>
 #include <stdio.h>
 #include <string.h>
+#include "devices/timer.h"
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
@@ -27,6 +28,11 @@ static struct list ready_list;
 /* List of all processes.  Processes are added to this list
    when they are first scheduled and removed when they exit. */
 static struct list all_list;
+
+/* ~PINTOS 3~
+  List of processes waiting for wake-up
+ */
+static struct list pending_list;
 
 /* Idle thread. */
 static struct thread *idle_thread;
@@ -76,6 +82,35 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
+/* ~PINTOS 3~ */
+static void thread_wake_up(void) {
+  enum intr_level old_level;
+
+  old_level = intr_disable ();
+
+  struct list *list = &pending_list;
+  long long now = timer_ticks();
+  struct thread *t;
+
+  struct list_elem *e = list_begin(list);
+  while(e != list_end(list)) {
+    t = list_entry(e, struct thread, elem);
+    ASSERT(is_thread(t));
+
+    if(t->wake_tick <= now) {
+      t->wake_tick = 0;
+
+      e = list_remove(e);
+      thread_unblock(t);
+    }
+    else e = list_next(e);
+  }
+
+  intr_set_level(old_level);
+}
+
+static void thread_aging(void) { /* TODO */ }
+
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -97,6 +132,9 @@ thread_init (void)
   lock_init (&tid_lock);
   list_init (&ready_list);
   list_init (&all_list);
+  
+  /* ~PINTOS 3~ */
+  list_init (&pending_list);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -305,11 +343,11 @@ thread_exit (int32_t exit_status)
 {
   ASSERT (!intr_context ());
 
+#ifdef USERPROG
   struct thread* thr = thread_current();
   thr->exit_status = exit_status;
   printf("%s: exit(%d)\n", thread_name(), exit_status);
 
-#ifdef USERPROG
   process_exit ();
 #endif
 
@@ -339,6 +377,21 @@ thread_yield (void)
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
+}
+
+/* ~PINTOS 3~*/
+void thread_sleep_until(long long until) {
+
+  enum intr_level old_level;
+  ASSERT (!intr_context ());
+  old_level = intr_disable();
+
+  struct thread *cur = thread_current();
+  cur->wake_tick = until;
+
+  list_push_back(&pending_list, &cur->elem);
+  thread_block();
+  intr_set_level(old_level);
 }
 
 /* Invoke function 'func' on all threads, passing along 'aux'.
@@ -486,6 +539,8 @@ init_thread (struct thread *t, const char *name, int priority)
   t->status = THREAD_BLOCKED;
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
+  /* ~PINTOS 3~ */
+  t->wake_tick = 0;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
   list_push_back (&all_list, &t->allelem);

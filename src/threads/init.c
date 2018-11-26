@@ -259,7 +259,7 @@ parse_options (char **argv)
 
 #ifndef USERPROG
       /*  project3  */
-      else if(!strcmpname, "-aging")
+      else if(!strcmp(name, "-aging"))
         thread_prior_aging = true;
 #endif
 #ifdef USERPROG
