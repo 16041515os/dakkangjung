@@ -12,6 +12,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/fixed-point.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -20,8 +21,6 @@
    Used to detect stack overflow.  See the big comment at the top
    of thread.h for details. */
 #define THREAD_MAGIC 0xcd6abf4b
-
-#define frac 16384 //2^14
 
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
@@ -72,7 +71,7 @@ bool thread_prior_aging;
    Controlled by kernel command-line option "-o mlfqs". */
 bool thread_mlfqs;
 
-int load_avg;
+fxp_t load_avg;
 
 static void kernel_thread (thread_func *, void *aux);
 
@@ -88,7 +87,7 @@ static tid_t allocate_tid (void);
 
 static void recalculate_load_avg(void);
 static void recalculate_recent_cpu(void);
-static void thread_aging(void);
+static void update_priority(void);
 
 /* ~PINTOS 3~ */
 static void thread_wake_up(void) {
@@ -207,8 +206,8 @@ thread_tick (void)
     }
 
   /* priority recalculated once every fourch clock tick, for every thread (MANUAL REFERENCE)*/ 
-    if(timer_ticks() % 4 == 0)
-      thread_aging();
+    if(timer_ticks() % TIME_SLICE == 0)
+      update_priority();
   }
 #endif
 }
@@ -473,7 +472,7 @@ thread_set_nice (int nice)
     else t->nice = -20;
   }
 
-  thread_aging();
+  update_priority();
   
   if(running_thread() -> priority != PRI_MAX) thread_yield();
 }
@@ -490,27 +489,14 @@ thread_get_nice (void)
 int
 thread_get_load_avg (void) 
 {
-  int val;
-  val = load_avg * 100;
-
-  /* rounding to nearest(manual reference) */
-  if(val >= 0) return (val + frac/2)/frac;
-  else return (val - frac/2)/frac;
-
+  return fixed_conv_int_near(fixed_mul_n(load_avg, 100));
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void) 
 {
-  int val;
-  struct thread *t = thread_current();
-  
-  val = t->recent_cpu * 100;
-
-  /* rounding to nearest(manual reference) */
-  if(val >= 0) return (val + frac/2)/frac;
-  else return (val - frac/2)/frac;
+  return fixed_conv_int_near(fixed_mul_n(thread_current()->recent_cpu, 100));
 }
 
 
@@ -531,56 +517,51 @@ recalculate_load_avg(void){
 
   struct thread *t = thread_current(); 
   int ready_threads;
-  int var1, var2, var3;
 
   ready_threads = list_size(&ready_list); 
   
   if(t != idle_thread) 
     ready_threads = ready_threads + 1;
 
-  var1 = (59*frac)/60;
-  var2 = ((int64_t)var1) * load_avg / frac;
-  var3 = ((1*frac)/60) * ready_threads;
+  fxp_t res0, res1;
+  res0 = fixed_mul(fixed_div_n(fixed_conv_fxp(59), 60), load_avg);
+  res1 = fixed_mul(fixed_div_n(fixed_conv_fxp(1), 60), ready_threads);
+  load_avg = fixed_add(res0, res1);
 
-  load_avg = var2 + var3;
-  
 }
 
 static void
 recalculate_recent_cpu(void){
 
   struct list_elem *e;
-  int var1, var2, var3,var4;
 
   for(e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)){
     struct thread *t = list_entry(e, struct thread, allelem);
 
-    var1 = 2 * load_avg;
-    var2 = (2 * load_avg) + 1 * frac;
-    var3 = ((int64_t)var1) * frac / var2;
-    var4 = ((int64_t)var3) * (t->recent_cpu) / frac;
+    fxp_t res;
+    res = fixed_div(fixed_mul_n(load_avg, 2), fixed_add_n(fixed_mul_n(load_avg, 2), 1));
+    res = fixed_add_n(fixed_mul(res, t->recent_cpu), t->nice);
 
-    t->recent_cpu = var4 + (t->nice) * frac;
+    t->recent_cpu = res;
   }
 }
 
 static void
-thread_aging(void){
+update_priority(void){
 
   struct list_elem *e;
-  int var1,var2,var3;
 
   for(e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)){
     struct thread *t = list_entry(e, struct thread, allelem);
-    var1 = ((t->recent_cpu) / 4) + ((t->nice) * 2) * frac;
-    var2 = var1 - PRI_MAX * frac;
-    var3 = -1 * var2;
-    
-    if(var3 >= PRI_MIN && var3 <= PRI_MAX) t->priority = var3;
-    else{
-      if(var3 < PRI_MIN) t->priority = PRI_MIN;
-      else t->priority = PRI_MAX;
-    }
+    fxp_t pr;
+    int pri;
+    pr = fixed_add(fixed_div_n(t->recent_cpu, 4), fixed_mul_n(t->nice, 2));
+    pr = fixed_sub(fixed_conv_fxp(PRI_MAX), pr);
+    pri = fixed_conv_int_near(pr);
+    if(pri < PRI_MIN) pri = PRI_MIN;
+    else if(pri > PRI_MAX) pri = PRI_MAX;
+
+    t->priority = pri;
   }
 }
 
@@ -672,7 +653,7 @@ init_thread (struct thread *t, const char *name, int priority)
   /* ~PINTOS 3~ */
   t->wake_tick = 0;
   t->priority = priority;
-  t->magic = THREAD_MAGIC;\
+  t->magic = THREAD_MAGIC;
   t->nice = running_thread()->nice;//parent value
   t->recent_cpu = running_thread()->recent_cpu;//parent value
   list_push_back (&all_list, &t->allelem);

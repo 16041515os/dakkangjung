@@ -4,7 +4,6 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
-#include "threads/synch.h"/*project 3*/
 
 #ifndef USERPROG
 /*  project3  */
@@ -99,7 +98,7 @@ struct thread
     /* ~PINTOS 3~ */
     int64_t wake_tick;      /* wakeup time for sleeping thread */
     int nice;
-    int recent_cpu;
+    int32_t recent_cpu;
 
     struct list_elem allelem;           /* List element for all threads list. */
 
@@ -125,7 +124,6 @@ struct thread
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
 extern bool thread_mlfqs;
-extern int load_avg;
 
 void thread_init (void);
 void thread_start (void);
