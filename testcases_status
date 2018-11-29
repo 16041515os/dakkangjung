@@ -1,0 +1,22 @@
+alarm-single (pass)
+alarm-multiple (pass)
+alarm-simultaneous (pass)
+alarm-priority (pass)
+alarm-zero (pass)
+alarm-negative (pass)
+priority-change (pass)
+priority-change-2 (pass)
+priority-fifo (pass)
+priority-lifo (pass?)
+priority-preempt (pass)
+priority-sema (pass)
+priority-aging (pass)
+mlfqs-block
+mlfqs-fair-2 
+mlfqs-fair-20 
+mlfqs-load-1
+mlfqs-load-60
+mlfqs-load-avg 
+mlfqs-nice-10
+mlfqs-nice-2
+mlfqs-recent-1
