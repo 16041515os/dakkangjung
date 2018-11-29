@@ -72,6 +72,8 @@ bool thread_prior_aging;
    Controlled by kernel command-line option "-o mlfqs". */
 bool thread_mlfqs;
 
+int load_avg;
+
 static void kernel_thread (thread_func *, void *aux);
 
 static void idle (void *aux UNUSED);
@@ -83,6 +85,10 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
+
+static void recalculate_load_avg(void);
+static void recalculate_recent_cpu(void);
+static void thread_aging(void);
 
 /* ~PINTOS 3~ */
 static void thread_wake_up(void) {
@@ -317,7 +323,7 @@ thread_unblock (struct thread *t)
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
  // list_push_back (&ready_list, &t->elem);
-  list_insert_ordered(&ready_list, &t->elem, list_less, 0);
+  list_insert_ordered(&ready_list, &t->elem, thread_less, 0);
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -393,7 +399,7 @@ thread_yield (void)
   old_level = intr_disable ();
   if (cur != idle_thread) 
     //list_push_back (&ready_list, &cur->elem);
-      list_insert_ordered(&ready_list, &cur->elem, list_less, 0);
+      list_insert_ordered(&ready_list, &cur->elem, thread_less, 0);
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -410,7 +416,7 @@ void thread_sleep_until(long long until) {
   cur->wake_tick = until;
 
   //list_push_back(&pending_list, &cur->elem);
-  list_insert_ordered(&pending_list, &cur->elem, list_less, 0);
+  list_insert_ordered(&pending_list, &cur->elem, thread_less, 0);
   thread_block();
   intr_set_level(old_level);
 }
@@ -510,7 +516,7 @@ thread_get_recent_cpu (void)
 
 /*Less function used in project 0*/
 bool
-list_less(const struct list_elem* e1, const struct list_elem* e2, void* aux){
+thread_less(const struct list_elem* e1, const struct list_elem* e2, void* aux){
 
   struct thread* t1 = list_entry(e1, struct thread, elem);
   struct thread* t2 = list_entry(e2, struct thread, elem);
@@ -520,7 +526,7 @@ list_less(const struct list_elem* e1, const struct list_elem* e2, void* aux){
 
 }
 
-void
+static void
 recalculate_load_avg(void){
 
   struct thread *t = thread_current(); 
@@ -540,7 +546,7 @@ recalculate_load_avg(void){
   
 }
 
-void
+static void
 recalculate_recent_cpu(void){
 
   struct list_elem *e;
@@ -558,7 +564,7 @@ recalculate_recent_cpu(void){
   }
 }
 
-void
+static void
 thread_aging(void){
 
   struct list_elem *e;

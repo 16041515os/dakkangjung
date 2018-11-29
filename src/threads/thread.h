@@ -125,7 +125,7 @@ struct thread
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
 extern bool thread_mlfqs;
-int load_avg;
+extern int load_avg;
 
 void thread_init (void);
 void thread_start (void);
@@ -162,8 +162,6 @@ int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
 /* project 3 */
-bool list_less(const struct list_elem* e1, const struct list_elem* e2, void* aux);
-void recalculate_load_avg(void);
-void recalculate_recent_cpu(void);
-void thread_aging(void);
+bool thread_less(const struct list_elem* e1, const struct list_elem* e2, void* aux);
+
 #endif /* threads/thread.h */
