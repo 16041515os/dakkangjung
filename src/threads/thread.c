@@ -21,6 +21,8 @@
    of thread.h for details. */
 #define THREAD_MAGIC 0xcd6abf4b
 
+#define frac 16384 //2^14
+
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
 static struct list ready_list;
@@ -109,7 +111,6 @@ static void thread_wake_up(void) {
   intr_set_level(old_level);
 }
 
-static void thread_aging(void) { /* TODO */ }
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -135,12 +136,15 @@ thread_init (void)
   
   /* ~PINTOS 3~ */
   list_init (&pending_list);
+  load_avg = 0;
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
+  initial_thread->nice = 0;//initialize 0
+  initial_thread->recent_cpu = 0;//initialize 0
 
 }
 
@@ -187,8 +191,19 @@ thread_tick (void)
   thread_wake_up();
 
   /*  project3  */
-  if(thread_prior_aging == true)
-    thread_aging();
+  if(thread_prior_aging == true){
+
+  /* recalcuations of recent_cpu and load_avg be made exactly when the system tick
+     counter reaches a multiple of a second (MANUAL REFERENCE)*/
+    if(timer_ticks() % TIMER_FREQ == 0){
+      recalculate_load_avg();
+      recalculate_recent_cpu();
+    }
+
+  /* priority recalculated once every fourch clock tick, for every thread (MANUAL REFERENCE)*/ 
+    if(timer_ticks() % 4 == 0)
+      thread_aging();
+  }
 #endif
 }
 
@@ -262,6 +277,9 @@ thread_create (const char *name, int priority,
   /* Add to run queue. */
   thread_unblock (t);
 
+  if(thread_current()->priority < priority)
+    thread_yield();
+
   return tid;
 }
 
@@ -298,7 +316,8 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+ // list_push_back (&ready_list, &t->elem);
+  list_insert_ordered(&ready_list, &t->elem, list_less, 0);
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -373,7 +392,8 @@ thread_yield (void)
 
   old_level = intr_disable ();
   if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+    //list_push_back (&ready_list, &cur->elem);
+      list_insert_ordered(&ready_list, &cur->elem, list_less, 0);
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -389,7 +409,8 @@ void thread_sleep_until(long long until) {
   struct thread *cur = thread_current();
   cur->wake_tick = until;
 
-  list_push_back(&pending_list, &cur->elem);
+  //list_push_back(&pending_list, &cur->elem);
+  list_insert_ordered(&pending_list, &cur->elem, list_less, 0);
   thread_block();
   intr_set_level(old_level);
 }
@@ -415,7 +436,14 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
-  thread_current ()->priority = new_priority;
+
+  if(new_priority < thread_current() -> priority){
+    thread_current()->priority = new_priority;
+    thread_yield();
+  }
+
+  else
+    thread_current()->priority = new_priority;
 }
 
 /* Returns the current thread's priority. */
@@ -427,34 +455,130 @@ thread_get_priority (void)
 
 /* Sets the current thread's nice value to NICE. */
 void
-thread_set_nice (int nice UNUSED) 
+thread_set_nice (int nice) 
 {
-  /* Not yet implemented. */
+  struct thread *t = thread_current();
+
+  if(nice >= -20 && nice <= 20)
+    t->nice = nice;
+  
+  else{
+    if(nice > 20) t->nice = 20;
+    else t->nice = -20;
+  }
+
+  thread_aging();
+  
+  if(running_thread() -> priority != PRI_MAX) thread_yield();
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  struct thread *t = thread_current();
+  return  t->nice;
 }
 
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  int val;
+  val = load_avg * 100;
+
+  /* rounding to nearest(manual reference) */
+  if(val >= 0) return (val + frac/2)/frac;
+  else return (val - frac/2)/frac;
+
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  int val;
+  struct thread *t = thread_current();
+  
+  val = t->recent_cpu * 100;
+
+  /* rounding to nearest(manual reference) */
+  if(val >= 0) return (val + frac/2)/frac;
+  else return (val - frac/2)/frac;
 }
+
+
+/*Less function used in project 0*/
+bool
+list_less(const struct list_elem* e1, const struct list_elem* e2, void* aux){
+
+  struct thread* t1 = list_entry(e1, struct thread, elem);
+  struct thread* t2 = list_entry(e2, struct thread, elem);
+
+  if((t1 -> priority) > (t2 -> priority)) return true;
+  else return false;
+
+}
+
+void
+recalculate_load_avg(void){
+
+  struct thread *t = thread_current(); 
+  int ready_threads;
+  int var1, var2, var3;
+
+  ready_threads = list_size(&ready_list); 
+  
+  if(t != idle_thread) 
+    ready_threads = ready_threads + 1;
+
+  var1 = (59*frac)/60;
+  var2 = ((int64_t)var1) * load_avg / frac;
+  var3 = ((1*frac)/60) * ready_threads;
+
+  load_avg = var2 + var3;
+  
+}
+
+void
+recalculate_recent_cpu(void){
+
+  struct list_elem *e;
+  int var1, var2, var3,var4;
+
+  for(e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)){
+    struct thread *t = list_entry(e, struct thread, allelem);
+
+    var1 = 2 * load_avg;
+    var2 = (2 * load_avg) + 1 * frac;
+    var3 = ((int64_t)var1) * frac / var2;
+    var4 = ((int64_t)var3) * (t->recent_cpu) / frac;
+
+    t->recent_cpu = var4 + (t->nice) * frac;
+  }
+}
+
+void
+thread_aging(void){
+
+  struct list_elem *e;
+  int var1,var2,var3;
+
+  for(e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)){
+    struct thread *t = list_entry(e, struct thread, allelem);
+    var1 = ((t->recent_cpu) / 4) + ((t->nice) * 2) * frac;
+    var2 = var1 - PRI_MAX * frac;
+    var3 = -1 * var2;
+    
+    if(var3 >= PRI_MIN && var3 <= PRI_MAX) t->priority = var3;
+    else{
+      if(var3 < PRI_MIN) t->priority = PRI_MIN;
+      else t->priority = PRI_MAX;
+    }
+  }
+}
+
+
 
 /* Idle thread.  Executes when no other thread is ready to run.
 
@@ -542,7 +666,9 @@ init_thread (struct thread *t, const char *name, int priority)
   /* ~PINTOS 3~ */
   t->wake_tick = 0;
   t->priority = priority;
-  t->magic = THREAD_MAGIC;
+  t->magic = THREAD_MAGIC;\
+  t->nice = running_thread()->nice;//parent value
+  t->recent_cpu = running_thread()->recent_cpu;//parent value
   list_push_back (&all_list, &t->allelem);
 }
 
