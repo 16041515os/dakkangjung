@@ -87,17 +87,18 @@ static tid_t allocate_tid (void);
 
 static void recalculate_load_avg(void);
 static void recalculate_recent_cpu(void);
-static void update_priority(void);
+static void update_priority(struct thread *);
+static void update_priority_all(void);
 
 /* ~PINTOS 3~ */
 static void thread_wake_up(void) {
   enum intr_level old_level;
 
-  old_level = intr_disable ();
-
   struct list *list = &pending_list;
   long long now = timer_ticks();
   struct thread *t;
+
+  old_level = intr_disable ();
 
   struct list_elem *e = list_begin(list);
   while(e != list_end(list)) {
@@ -145,11 +146,12 @@ thread_init (void)
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
+
+  initial_thread->nice = 0;
+  initial_thread->recent_cpu = 0;
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
-  initial_thread->nice = 0;//initialize 0
-  initial_thread->recent_cpu = 0;//initialize 0
 
 }
 
@@ -195,8 +197,10 @@ thread_tick (void)
   /*  project3  */
   thread_wake_up();
 
-  /*  project3  */
-  if(thread_prior_aging == true){
+  if(thread_mlfqs || thread_prior_aging){
+
+    struct thread *cur = thread_current();
+    cur->recent_cpu = fixed_add_n(cur->recent_cpu, 1);
 
   /* recalcuations of recent_cpu and load_avg be made exactly when the system tick
      counter reaches a multiple of a second (MANUAL REFERENCE)*/
@@ -207,7 +211,7 @@ thread_tick (void)
 
   /* priority recalculated once every fourch clock tick, for every thread (MANUAL REFERENCE)*/ 
     if(timer_ticks() % TIME_SLICE == 0)
-      update_priority();
+      update_priority_all();
   }
 #endif
 }
@@ -321,7 +325,7 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
- // list_push_back (&ready_list, &t->elem);
+
   list_insert_ordered(&ready_list, &t->elem, thread_less, 0);
   t->status = THREAD_READY;
   intr_set_level (old_level);
@@ -396,9 +400,8 @@ thread_yield (void)
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
-  if (cur != idle_thread) 
-    //list_push_back (&ready_list, &cur->elem);
-      list_insert_ordered(&ready_list, &cur->elem, thread_less, 0);
+  if (cur != idle_thread)
+    list_insert_ordered(&ready_list, &cur->elem, thread_less, NULL);
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -409,13 +412,13 @@ void thread_sleep_until(long long until) {
 
   enum intr_level old_level;
   ASSERT (!intr_context ());
-  old_level = intr_disable();
 
   struct thread *cur = thread_current();
   cur->wake_tick = until;
 
-  //list_push_back(&pending_list, &cur->elem);
-  list_insert_ordered(&pending_list, &cur->elem, thread_less, 0);
+  old_level = intr_disable();
+
+  list_insert_ordered(&pending_list, &cur->elem, thread_less, NULL);
   thread_block();
   intr_set_level(old_level);
 }
@@ -472,7 +475,7 @@ thread_set_nice (int nice)
     else t->nice = -20;
   }
 
-  update_priority();
+  update_priority(t);
   
   if(running_thread() -> priority != PRI_MAX) thread_yield();
 }
@@ -502,7 +505,7 @@ thread_get_recent_cpu (void)
 
 /*Less function used in project 0*/
 bool
-thread_less(const struct list_elem* e1, const struct list_elem* e2, void* aux){
+thread_less(const struct list_elem* e1, const struct list_elem* e2, void* aux UNUSED){
 
   struct thread* t1 = list_entry(e1, struct thread, elem);
   struct thread* t2 = list_entry(e2, struct thread, elem);
@@ -547,21 +550,27 @@ recalculate_recent_cpu(void){
 }
 
 static void
-update_priority(void){
+update_priority(struct thread *t) {
+  fxp_t pr;
+  int pri;
+  pr = fixed_add(fixed_div_n(t->recent_cpu, 4), fixed_mul_n(t->nice, 2));
+  pr = fixed_sub(fixed_conv_fxp(PRI_MAX), pr);
+  pri = fixed_conv_int_near(pr);
+  if(pri < PRI_MIN)
+    pri = PRI_MIN;
+  else if(pri > PRI_MAX)
+    pri = PRI_MAX;
+
+  t->priority = pri;
+}
+
+static void update_priority_all(void) {
+
+  ASSERT (intr_get_level () == INTR_OFF);
 
   struct list_elem *e;
-
-  for(e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)){
-    struct thread *t = list_entry(e, struct thread, allelem);
-    fxp_t pr;
-    int pri;
-    pr = fixed_add(fixed_div_n(t->recent_cpu, 4), fixed_mul_n(t->nice, 2));
-    pr = fixed_sub(fixed_conv_fxp(PRI_MAX), pr);
-    pri = fixed_conv_int_near(pr);
-    if(pri < PRI_MIN) pri = PRI_MIN;
-    else if(pri > PRI_MAX) pri = PRI_MAX;
-
-    t->priority = pri;
+  for(e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)) {
+    update_priority(list_entry(e, struct thread, allelem));
   }
 }
 
@@ -652,10 +661,12 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   /* ~PINTOS 3~ */
   t->wake_tick = 0;
-  t->priority = priority;
   t->magic = THREAD_MAGIC;
   t->nice = running_thread()->nice;//parent value
   t->recent_cpu = running_thread()->recent_cpu;//parent value
+  t->priority = priority;
+  if(thread_mlfqs) update_priority(t);
+
   list_push_back (&all_list, &t->allelem);
 }
 
