@@ -528,7 +528,7 @@ recalculate_load_avg(void){
 
   fxp_t res0, res1;
   res0 = fixed_mul(fixed_div_n(fixed_conv_fxp(59), 60), load_avg);
-  res1 = fixed_mul(fixed_div_n(fixed_conv_fxp(1), 60), ready_threads);
+  res1 = fixed_mul_n(fixed_div_n(fixed_conv_fxp(1), 60), ready_threads);
   load_avg = fixed_add(res0, res1);
 
 }
