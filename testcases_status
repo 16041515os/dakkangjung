@@ -11,12 +11,12 @@ priority-lifo (pass?)
 priority-preempt (pass)
 priority-sema (pass)
 priority-aging (pass)
-mlfqs-block
-mlfqs-fair-2 
-mlfqs-fair-20 
-mlfqs-load-1
-mlfqs-load-60
-mlfqs-load-avg 
-mlfqs-nice-10
-mlfqs-nice-2
-mlfqs-recent-1
+mlfqs-block (pass)
+mlfqs-fair-2 (pass)
+mlfqs-fair-20 (pass)
+mlfqs-load-1 (pass)
+mlfqs-load-60 (pass)
+mlfqs-load-avg (pass)
+mlfqs-nice-10 (fail)
+mlfqs-nice-2 (fail)
+mlfqs-recent-1 (pass)
