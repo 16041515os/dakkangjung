@@ -481,20 +481,11 @@ thread_set_nice (int nice)
 {
   struct thread *t = thread_current();
 
-  if(nice >= -20 && nice <= 20)
+  if(nice < -20) nice = -20;
+  else if(nice > 20) nice = 20;
     t->nice = nice;
   
-  else{
-    if(nice > 20) t->nice = 20;
-    else t->nice = -20;
-  }
-
-  int old_pri, pri;
-  old_pri = t->priority;
   update_priority(t);
-  pri = t->priority;
-  if(old_pri != pri) list_push_back(&level_queues[pri], &t->elem);
-  
   int i;
   for(i = thread_current()->priority + 1; i<64; ++i) {
     if(!list_empty(&level_queues[i])) break;
@@ -593,11 +584,14 @@ static void update_priority_all_move(void) {
   struct thread *t;
   struct list_elem *e;
   for(e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)) {
-    t = list_entry(e, struct thread, elem);
+    t = list_entry(e, struct thread, allelem);
     old_pri = t->priority;
-    update_priority(list_entry(e, struct thread, allelem));
+    update_priority(t);
     pri = t->priority;
-    if(old_pri != pri) list_push_back(&level_queues[pri], &t->elem);
+    if(t->status == THREAD_READY && old_pri != pri) {
+      list_remove(&t->elem);
+      list_push_back(&level_queues[pri], &t->elem);
+    }
     // should yield if when low priority?
   }
 }
@@ -609,8 +603,9 @@ static void age_priority(void) {
   struct list_elem *e;
   for(e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)) {
     struct thread *t = list_entry(e, struct thread, allelem);
-    if(t != idle_thread && t != thread_current()) {
+    if(t->status == THREAD_READY) {
       int pri = ++t->priority;
+      list_remove(&t->elem);
       list_push_back(&level_queues[pri], &t->elem);
     }
   }
