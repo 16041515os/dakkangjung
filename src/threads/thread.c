@@ -565,7 +565,7 @@ static void
 update_priority(struct thread *t) {
   fxp_t pr;
   int pri;
-  pr = fixed_add(fixed_div_n(t->recent_cpu, 4), fixed_mul_n(t->nice, 2));
+  pr = fixed_add(fixed_div_n(t->recent_cpu, 4), fixed_mul_n(fixed_conv_fxp(t->nice), 2));
   pr = fixed_sub(fixed_conv_fxp(PRI_MAX), pr);
   pri = fixed_conv_int_near(pr);
   if(pri < PRI_MIN)
