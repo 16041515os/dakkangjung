@@ -604,7 +604,11 @@ static void age_priority(void) {
   for(e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)) {
     struct thread *t = list_entry(e, struct thread, allelem);
     if(t->status == THREAD_READY) {
-      int pri = ++t->priority;
+      t->priority++;
+      if(t->priority > PRI_MAX)
+        t->priority = PRI_MAX;
+
+      int pri = t->priority;
       list_remove(&t->elem);
       list_push_back(&level_queues[pri], &t->elem);
     }
