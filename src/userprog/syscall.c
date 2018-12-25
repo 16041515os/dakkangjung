@@ -11,19 +11,19 @@
 #include "filesys/file.h"
 #include "filesys/filesys.h"
 
-static struct lock file_lock;
+static struct lock filesys_lock;
 
-static void vaddr_check(void* addr){// check valid address
-  if(!is_user_vaddr(addr)) exit(-1);
-}
+static int get_user (const uint8_t *uaddr);
+static bool put_user (uint8_t *udst, uint8_t byte);
+static size_t read_bytes (void *dest, void *src, size_t nb);
 
 static void syscall_handler (struct intr_frame *);
 
 void
 syscall_init (void) 
 {
+  lock_init(&filesys_lock);
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
-  lock_init(&file_lock);
 }
 
 static void
@@ -31,192 +31,238 @@ syscall_handler (struct intr_frame *f)
 { 
   
   int SYSCALL_NUM;
-  int n,n1,n2,n3,n4;
-  const char* _cline;
 
-  vaddr_check(f->esp);
-  SYSCALL_NUM = *(int*)(f->esp);
+  read_bytes(&SYSCALL_NUM, f->esp, sizeof SYSCALL_NUM);
 
   if(SYSCALL_NUM == SYS_HALT){
       halt();
   }
 
   else if(SYSCALL_NUM == SYS_EXIT){
+    int exit_code;
+    read_bytes(&exit_code, f->esp + 4, sizeof exit_code);
 
-    vaddr_check(f->esp + 4);
-    exit(*(uint32_t*)(f->esp+4));
+    exit(exit_code);
   }
 
   else if(SYSCALL_NUM == SYS_EXEC){
+    char *cmdline;
+    char dummy;
+    read_bytes(&cmdline, f->esp + 4, sizeof cmdline);
+    read_bytes(&dummy, cmdline, sizeof dummy);
 
-    _cline = (const char*)*(uint32_t*)(f->esp + 4);
-    vaddr_check((void*)_cline);
-    f->eax = exec(_cline);
+    f->eax = exec((char const *)cmdline);
   }
 
   else if(SYSCALL_NUM == SYS_WAIT){
-  
-   f->eax =  wait((int)*(uint32_t*)(f->esp+4));
-  
+    tid_t pid;
+    read_bytes(&pid, f->esp + 4, sizeof pid);
+    f->eax = wait(pid);
   }
 
   else if(SYSCALL_NUM == SYS_CREATE) {
-    vaddr_check(f->esp+8);
-
-    char const *fname;
+    char *fname;
+    char dummy;
     unsigned size;
 
-    fname = (char *)*(uint32_t *)(f->esp+4);
-    if(!is_user_vaddr(fname)) exit(-1);
-    UNUSED volatile const char _ = *fname; // try access
+    read_bytes(&fname, f->esp + 4, sizeof fname);
+    read_bytes(&dummy, fname, sizeof dummy);
+    read_bytes(&size, f->esp + 8, sizeof size);
 
-    size = *(uint32_t*)(f->esp+8);
-
-    f->eax = filesys_create(fname, size);
+    f->eax = filesys_create((char const *)fname, size);
   }
 
   else if(SYSCALL_NUM == SYS_REMOVE) {
-    vaddr_check(f->esp+4);
+    char *fname;
+    char dummy;
 
-    char const *fname;
-    fname = (char *)*(uint32_t *)(f->esp+4);
-    if(!is_user_vaddr(fname)) exit(-1);
-    UNUSED volatile const char _ = *fname; // try access
+    read_bytes(&fname, f->esp + 4, sizeof fname);
+    read_bytes(&dummy, fname, sizeof dummy);
 
-    lock_acquire(&file_lock);
-    f->eax = filesys_remove(fname);
-    lock_release(&file_lock);
+    f->eax = filesys_remove((char const *)fname);
   }
 
   else if(SYSCALL_NUM == SYS_OPEN) {
-    vaddr_check(f->esp+4);
+    char *fname;
+    char dummy;
 
-    const char *fname;
-    fname = (char *)*(uint32_t *)(f->esp+4);
-    if(!is_user_vaddr(fname)) exit(-1);
-    UNUSED volatile const char _ = *fname; // try access
+    read_bytes(&fname, f->esp + 4, sizeof fname);
+    read_bytes(&dummy, fname, sizeof dummy);
 
-    f->eax = process_open_file(fname);
+    f->eax = process_open_file((char const *)fname);
   }
 
   else if(SYSCALL_NUM == SYS_FILESIZE) {
-    vaddr_check(f->esp+4);
+    int fd;
+    struct file *file;
 
-    int fd = *(uint32_t*)(f->esp+4);
-    struct file *file = process_get_file(fd);
-    if(file == NULL) exit(-1);
+    read_bytes(&fd, f->esp + 4, sizeof fd);
+
+    file = process_get_file(fd);
+    if(file == NULL) thread_exit(-1);
 
     f->eax = file_length(file);
   }
 
   else if(SYSCALL_NUM == SYS_READ){
-    vaddr_check(f->esp+12);
-
     int fd;
     uint8_t *buffer;
-    unsigned size;
-    fd = *(uint32_t *)(f->esp+4);
-    buffer = (uint8_t *)*(uint32_t *)(f->esp+8);
-    size = *(uint32_t *)(f->esp+12);
+    size_t size;
 
-    if(fd == 1 || fd == 2 || !is_user_vaddr(buffer)) {
+    read_bytes(&fd, f->esp + 4, sizeof fd);
+    read_bytes(&buffer, f->esp + 8, sizeof buffer);
+    read_bytes(&size, f->esp + 12, sizeof size);
+    if(size < 0) size = 0;
+
+    if(fd == 1 || fd == 2) thread_exit(-1);
+
+    if(size > 0 && (!put_user(buffer, 0x00) || !put_user(buffer + size-1, 0x00))) {
       thread_exit(-1);
     }
-    else if(fd == 0) {
+
+    if(fd == 0) {
       unsigned i;
-      lock_acquire(&file_lock);
+      lock_acquire(&filesys_lock);
       for(i = 0; i < size; i++){
         buffer[i] = input_getc();
       }
-      lock_release(&file_lock);
       f->eax = size;
     }
     else {
       struct file *file = process_get_file(fd);
       if(file == NULL) thread_exit(-1);
 
-      lock_acquire(&file_lock);
+      lock_acquire(&filesys_lock);
       f->eax = file_read(file, buffer, size);
-      lock_release(&file_lock);
+      lock_release(&filesys_lock);
     }
   }
 
   else if(SYSCALL_NUM == SYS_WRITE){
-    vaddr_check(f->esp+12);
-
     int fd;
-    void *buffer;
-    unsigned size;
-    fd = *(uint32_t *)(f->esp+4);
-    buffer = (void *)*(uint32_t *)(f->esp+8);
-    size = *(uint32_t *)(f->esp+12);
+    uint8_t *buffer;
+    size_t size;
 
-    if(fd == 0 || !is_user_vaddr(buffer)) {
+    read_bytes(&fd, f->esp + 4, sizeof fd);
+    read_bytes(&buffer, f->esp + 8, sizeof buffer);
+    read_bytes(&size, f->esp + 12, sizeof size);
+    if(size < 0) size = 0;
+
+    if(fd == 0 || fd == 2) thread_exit(-1);
+
+    if(size > 0 && (get_user(buffer) == -1 || get_user(buffer + size-1) == -1)) {
       thread_exit(-1);
     }
-    else if(fd == 1 /*|| fd == 2*/) {
-      if(!is_user_vaddr(buffer)) thread_exit(-1);
-      lock_acquire(&file_lock);
-      putbuf(buffer, size);
-      lock_release(&file_lock);
+
+    if(fd == 1 /*|| fd == 2*/) {
+      lock_acquire(&filesys_lock);
+      putbuf((char *)buffer, size);
+      lock_release(&filesys_lock);
       f->eax = size;
     }
     else {
       struct file *file = process_get_file(fd);
       if(file == NULL) thread_exit(-1);
 
-      lock_acquire(&file_lock);
+      lock_acquire(&filesys_lock);
       f->eax = file_write(file, buffer, size);
-      lock_release(&file_lock);
+      lock_release(&filesys_lock);
     }
   }
 
   else if(SYSCALL_NUM == SYS_SEEK) {
-    vaddr_check(f->esp+8);
+    int fd;
+    size_t ofs;
 
-    int fd = *(uint32_t *)(f->esp+4);
-    unsigned ofs = *(uint32_t *)(f->esp+8);
+    read_bytes(&fd, f->esp + 4, sizeof fd);
+    read_bytes(&ofs, f->esp + 8, sizeof ofs);
+
     struct file *file = process_get_file(fd);
-    if(file == NULL) exit(-1);
+    if(file == NULL) thread_exit(-1);
 
     file_seek(file, ofs);
   }
 
   else if(SYSCALL_NUM == SYS_TELL) {
-    vaddr_check(f->esp+4);
+    int fd;
+    read_bytes(&fd, f->esp + 4, sizeof fd);
 
-    int fd = *(uint32_t *)(f->esp+4);
     struct file *file = process_get_file(fd);
-    if(file == NULL) exit(-1);
+    if(file == NULL) thread_exit(-1);
 
     f->eax = file_tell(file);
   }
 
   else if(SYSCALL_NUM == SYS_CLOSE) {
-    vaddr_check(f->esp+4);
+    int fd;
+    read_bytes(&fd, f->esp + 4, sizeof fd);
 
-    int fd = *(uint32_t *)(f->esp+4);
     bool success = process_close_file(fd);
-    if(!success) exit(-1);
+    if(!success) thread_exit(-1);
   }
 
-  else if(SYSCALL_NUM == SYS_PIBONACCI){
-      
-    n = (int)*(uint32_t*)(f->esp+4);
-    
+  else if(SYSCALL_NUM == SYS_PIBONACCI) {
+    int n;
+    read_bytes(&n, f->esp + 4, sizeof n);
     f->eax = pibonacci(n);
   }
 
   else if(SYSCALL_NUM == SYS_SUM_OF_FOUR_INTEGERS){
+    int n1, n2, n3, n4;
     
-    n1 = (int)*(uint32_t*)(f->esp+4);
-    n2 = (int)*(uint32_t*)(f->esp+8);
-    n3 = (int)*(uint32_t*)(f->esp+12);
-    n4 = (int)*(uint32_t*)(f->esp+16);
+    read_bytes(&n1, f->esp + 4, sizeof n1);
+    read_bytes(&n2, f->esp + 8, sizeof n1);
+    read_bytes(&n3, f->esp + 12, sizeof n1);
+    read_bytes(&n4, f->esp + 16, sizeof n1);
 
     f->eax = sum_of_four_integers(n1,n2,n3,n4);
   }
 
+}
+
+ 	
+/* Reads a byte at user virtual address UADDR.
+   UADDR must be below PHYS_BASE.
+   Returns the byte value if successful, -1 if a segfault
+   occurred. */
+static int
+get_user (const uint8_t *uaddr)
+{
+  if(!is_user_vaddr(uaddr)) return -1;
+
+  int result;
+  asm ("movl $1f, %0; movzbl %1, %0; 1:"
+       : "=&a" (result) : "m" (*uaddr));
+  return result;
+}
+ 
+/* Writes BYTE to user address UDST.
+   UDST must be below PHYS_BASE.
+   Returns true if successful, false if a segfault occurred. */
+static bool
+put_user (uint8_t *udst, uint8_t byte)
+{
+  if(!is_user_vaddr(udst)) return false;
+
+  int error_code;
+  asm ("movl $1f, %0; movb %b2, %1; 1:"
+       : "=&a" (error_code), "=m" (*udst) : "q" (byte));
+  return error_code != -1;
+}
+
+/* == memcpy(dest, src, nb) */
+static size_t read_bytes (void *dest, void *src, size_t nb) {
+  size_t i;
+
+  ASSERT(is_kernel_vaddr(dest));
+
+  if(get_user(src+0) == -1 || get_user(src+nb-1) == -1) thread_exit(-1);
+
+  for(i=0; i<nb;  ++i) {
+    ((uint8_t *)dest)[i] = ((uint8_t *)src)[i];
+  }
+
+  return nb;
 }
 
 void halt(void){

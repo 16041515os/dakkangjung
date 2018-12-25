@@ -348,7 +348,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   int command_len = 0;
 
   /* initialize process-specific file descriptor table */
-  t->fdtable = palloc_get_page(0);
+  t->fdtable = palloc_get_page(PAL_ZERO);
   t->nextfd = 3;
 
   /* Allocate and activate page directory. */
