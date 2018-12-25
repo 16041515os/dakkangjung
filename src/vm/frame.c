@@ -89,7 +89,7 @@ void frame_set_page(uint32_t *pd, void *upage, void *kpage) {
 
 void frame_entry_free(uint32_t *pd, void *kpage) {
   ASSERT(is_kernel_vaddr(kpage));
-  ASSERT(pg_ofs(kpage));
+  ASSERT(pg_ofs(kpage) == 0);
 
   lock_acquire(&frame_lock);
 
@@ -132,7 +132,7 @@ void frame_set_pinned(void *kpage, bool value) {
 
 static unsigned _frame_hash_func(struct hash_elem const *e, UNUSED void *aux) {
   struct fte *fte = hash_entry(e, struct fte, hash_elem);
-  return hash_bytes(fte->kpage, sizeof fte->kpage);
+  return hash_bytes(&fte->kpage, sizeof fte->kpage);
 }
 
 static bool _frame_less_func(struct hash_elem const *a, struct hash_elem const *b, UNUSED void *aux) {
