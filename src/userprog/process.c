@@ -24,6 +24,7 @@
 #include "vm/frame.h"
 #else
 #define frame_alloc(x) palloc_get_page(x)
+#define frame_free_hard(y, x) palloc_free_page(x)
 #endif
 
 static thread_func start_process NO_RETURN;

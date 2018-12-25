@@ -87,6 +87,11 @@ void frame_set_page(uint32_t *pd, void *upage, void *kpage) {
   lock_release(&frame_lock);
 }
 
+void frame_free_hard(uint32_t *pd, void *kpage) {
+  frame_entry_free(pd, kpage);
+  palloc_free_page(kpage);
+}
+
 void frame_entry_free(uint32_t *pd, void *kpage) {
   ASSERT(is_kernel_vaddr(kpage));
   ASSERT(pg_ofs(kpage) == 0);
