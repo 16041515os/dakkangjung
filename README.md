@@ -22,11 +22,11 @@ make tests/userprog/wait-bad-pid.result
 make tests/userprog/multi-recurse.result  
 
 ## testcase proj2
-make tests/userprog/create-normal.result  
-make tests/userprog/create-empty.result  
-make tests/userprog/create-null.result  
-make tests/userprog/create-bad-ptr.result  
-make tests/userprog/create-long.result  
+make tests/userprog/create-normal.result
+make tests/userprog/create-empty.result
+make tests/userprog/create-null.result
+make tests/userprog/create-bad-ptr.result
+make tests/userprog/create-long.result
 make tests/userprog/create-exists.result  
 make tests/userprog/create-bound.result  
 make tests/userprog/open-normal.result 
@@ -105,19 +105,19 @@ make tests/threads/mlfqs-recent-1.result
 
 
 ## testcase proj4
-make tests/vm/pt-grow-stack
-make tests/vm/pt-grow-pusha
-make tests/vm/pt-grow-bad
-make tests/vm/pt-big-stk-obj
-make tests/vm/pt-bad-addr
-make tests/vm/pt-bad-read
-make tests/vm/pt-write-code
-make tests/vm/pt-write-code2
-make tests/vm/pt-grow-stk-sc
-make tests/vm/page-linear
-make tests/vm/page-parallel
-make tests/vm/page-merge-seq
-make tests/vm/page-merge-par
-make tests/vm/page-merge-stk
-make tests/vm/page-merge-mm
-make tests/vm/page-shuffle
+make tests/vm/pt-grow-stack.result  
+make tests/vm/pt-grow-pusha.result  
+make tests/vm/pt-grow-bad.result  
+make tests/vm/pt-big-stk-obj.result  
+make tests/vm/pt-bad-addr.result  
+make tests/vm/pt-bad-read.result  
+make tests/vm/pt-write-code.result  
+make tests/vm/pt-write-code2.result  
+make tests/vm/pt-grow-stk-sc.result  
+make tests/vm/page-linear.result  
+make tests/vm/page-parallel.result  
+make tests/vm/page-merge-seq.result  
+make tests/vm/page-merge-par.result  
+make tests/vm/page-merge-stk.result  
+make tests/vm/page-merge-mm.result  
+make tests/vm/page-shuffle.result  
