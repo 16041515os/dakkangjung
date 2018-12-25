@@ -20,6 +20,12 @@
 #include "threads/malloc.h"
 #include "threads/synch.h"
 
+#ifdef VM
+#include "vm/frame.h"
+#else
+#define frame_alloc(x) palloc_get_page(x)
+#endif
+
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
