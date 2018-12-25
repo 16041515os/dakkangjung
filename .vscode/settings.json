@@ -1,0 +1,11 @@
+{
+  "files.associations": {
+    "pagedir.h": "c",
+    "stdio.h": "c",
+    "flags.h": "c",
+    "timer.h": "c",
+    "arc4.h": "c",
+    "system_error": "c",
+    "syscall-nr.h": "c"
+  }
+}

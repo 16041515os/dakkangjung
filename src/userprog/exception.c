@@ -5,6 +5,7 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "pagedir.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -109,6 +110,12 @@ kill (struct intr_frame *f)
     }
 }
 
+/*
+static is_valid_reference(struct thread *thread, void *fault_addr) {
+  if(pagedir_get_page(thread->pagedir, fault_addr) != NULL);
+}
+*/
+
 /* Page fault handler.  This is a skeleton that must be filled in
    to implement virtual memory.  Some solutions to project 2 may
    also require modifying this code.
@@ -166,5 +173,25 @@ page_fault (struct intr_frame *f)
           write ? "writing" : "reading",
           user ? "user" : "kernel");
   kill (f);
-}
 
+  /*
+  size_t MAX_STACK_SIZE = 1 << 23; // 8MB
+
+  if(user == false) {
+    // KERNEL MUST NOT TRIGGER PAGE FAULT
+  }
+  // may be invalid reference
+  else if(not_present == true) {
+    // growable region
+    if(is_user_vaddr(fault_addr) && fault_addr < PHYS_BASE - MAX_STACK_SIZE) {
+    }
+    else {
+      // invalid reference
+      thread_exit(-1);
+    }
+  }
+  else {
+    thread_exit(-1);
+  }
+  */
+}
