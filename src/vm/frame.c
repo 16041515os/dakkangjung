@@ -94,7 +94,7 @@ void frame_dealloc(void *kpage) {
 
 // deregister AND free KPAGE
 void frame_free(void *kpage) {
-  frame_entry_free(kpage, false);
+  frame_entry_free(kpage, true);
 }
 
 void frame_set_pinned(void *kpage, bool value) {
