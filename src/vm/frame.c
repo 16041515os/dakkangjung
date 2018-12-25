@@ -44,7 +44,7 @@ void frame_init(void) {
 }
 
 void *frame_alloc(enum palloc_flags pflags) {
-  ASSERT(pflags & PAL_USER != 0);
+  ASSERT((pflags & PAL_USER) != 0);
 
   lock_acquire(&frame_lock);
 
