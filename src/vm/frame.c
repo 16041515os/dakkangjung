@@ -15,8 +15,11 @@ struct fte {
   void *kpage;
 
   // hash value
-  void *upage; 
-  struct thread *thread;
+  /* initially NULL, meaning KPAGE has no mapping */
+  void *upage;
+  uint32_t *pagedir;
+
+  // initially true on creation
   bool pinned;
 
   // for hashmap
@@ -40,21 +43,23 @@ void frame_init(void) {
   lock_init(&frame_lock);
 }
 
-void *frame_alloc(enum palloc_flags pflags, void *upage) {
+void *frame_alloc(enum palloc_flags pflags) {
+  ASSERT(pflags & PAL_USER != 0);
+
   lock_acquire(&frame_lock);
 
-  void *new_frame = palloc_get_page(PAL_USER | pflags);
+  void *new_frame = palloc_get_page(pflags);
   if(new_frame == NULL) {
-    PANIC("- frame_alloc: sorry, frame swapping not yet!!");
+    PANIC("- frame_alloc: swapping required");
   }
 
   struct fte *entry = malloc(sizeof *entry);
   ASSERT(entry != NULL);
 
   entry->kpage = new_frame;
-  entry->upage = upage;
-  entry->thread = thread_current();
-  entry->pinned = true;   // initially true, false when load/install
+  entry->upage = NULL;
+  entry->pagedir = NULL;
+  entry->pinned = true;
 
   hash_insert(&frame_table, &entry->hash_elem);
   list_push_back(&frame_list, &entry->list_elem);
@@ -64,7 +69,25 @@ void *frame_alloc(enum palloc_flags pflags, void *upage) {
   return new_frame;
 }
 
-static void frame_entry_free(void *kpage, bool do_free) {
+void frame_set_page(uint32_t *pd, void *upage, void *kpage) {
+  lock_acquire(&frame_lock);
+
+  struct fte lookup_e;
+  lookup_e.kpage = kpage;
+  struct hash_elem *found = hash_find(&frame_table, &lookup_e.hash_elem);
+  if(found == NULL) {
+    PANIC("- frame_set_page: no frame entry for KPAGE");
+  }
+
+  struct fte *entry = hash_entry(found, struct fte, hash_elem);
+
+  entry->upage = upage;
+  entry->pagedir = pd;
+
+  lock_release(&frame_lock);
+}
+
+void frame_entry_free(uint32_t *pd, void *kpage) {
   ASSERT(is_kernel_vaddr(kpage));
   ASSERT(pg_ofs(kpage));
 
@@ -78,23 +101,14 @@ static void frame_entry_free(void *kpage, bool do_free) {
   }
 
   found_e = hash_entry(found, struct fte, hash_elem);
+  ASSERT(found_e->pagedir == pd);
+
   hash_delete(&frame_table, &found_e->hash_elem);
   list_remove(&found_e->list_elem);
 
-  if(do_free) palloc_free_page(kpage);
   free(found_e);
 
   lock_release(&frame_lock);
-}
-
-// only deregister KPAGE from frame table
-void frame_dealloc(void *kpage) {
-  frame_entry_free(kpage, false);
-}
-
-// deregister AND free KPAGE
-void frame_free(void *kpage) {
-  frame_entry_free(kpage, true);
 }
 
 void frame_set_pinned(void *kpage, bool value) {
