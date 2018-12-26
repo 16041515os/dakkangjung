@@ -68,7 +68,7 @@ void *frame_alloc(struct thread *thread, enum palloc_flags pflags) {
     pagedir_clear_page(pd, victim->upage);
 
     uint32_t swap_idx = swap_out(victim->kpage);
-    supt_set_swap_page(thread->supt, victim->upage, swap_idx, victim->writable);
+    supt_install_swap_page(thread->supt, victim->upage, swap_idx, victim->writable);
 
     frame_free_hard_internal(thread->pagedir, victim->kpage);
 

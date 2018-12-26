@@ -637,6 +637,17 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
     size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
     size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
+#ifdef VM
+  struct thread *thr = thread_current();
+  ASSERT(pagedir_get_page(thr, upage) == NULL);
+
+  if(! supt_install_file(thr->supt, upage,
+    file, ofs, page_read_bytes, page_zero_bytes, writable)
+  ) {
+    return false;
+  }
+#else
+
     /* Get a page of memory. */
     uint8_t *knpage = frame_alloc (thread_current(), PAL_USER);
     if (knpage == NULL)
@@ -656,11 +667,15 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       palloc_free_page (knpage);
       return false; 
     }
+#endif
 
     /* Advance. */
     read_bytes -= page_read_bytes;
     zero_bytes -= page_zero_bytes;
     upage += PGSIZE;
+#ifdef VM
+    ofs += PGSIZE;
+#endif
   }
   return true;
 }
