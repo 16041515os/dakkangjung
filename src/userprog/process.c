@@ -701,6 +701,10 @@ install_page (void *upage, void *kpage, bool writable)
 
   /* Verify that there's not already a page at that virtual
      address, then map our page there. */
-  return (pagedir_get_page (th->pagedir, upage) == NULL
-      && pagedir_set_page (th->pagedir, upage, kpage, writable));
+  bool f = pagedir_get_page (th->pagedir, upage) == NULL;
+  f = f && pagedir_set_page (th->pagedir, upage, kpage, writable);
+#ifdef VM
+  if(f) frame_set_pinned(kpage, false);
+#endif
+  return f;
 }

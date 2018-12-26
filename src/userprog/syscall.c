@@ -4,12 +4,21 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/synch.h"
-#include "devices/shutdown.h"
 #include "threads/vaddr.h"
-#include "userprog/process.h"
+#include "devices/shutdown.h"
 #include "devices/input.h"
+#include "userprog/process.h"
+#include "userprog/pagedir.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
+
+
+#ifdef VM
+#include "vm/page.h"
+#include "vm/frame.h"
+static void force_load_and_pin(uint8_t *, size_t);
+static void unpin_loaded_pages(uint8_t *, size_t);
+#endif
 
 static struct lock filesys_lock;
 
@@ -133,7 +142,13 @@ syscall_handler (struct intr_frame *f)
       if(file == NULL) thread_exit(-1);
 
       lock_acquire(&filesys_lock);
+#ifdef VM
+      force_load_and_pin(buffer, size);
+#endif
       f->eax = file_read(file, buffer, size);
+#ifdef VM
+      unpin_loaded_pages(buffer, size);
+#endif
       lock_release(&filesys_lock);
     }
   }
@@ -164,7 +179,13 @@ syscall_handler (struct intr_frame *f)
       if(file == NULL) thread_exit(-1);
 
       lock_acquire(&filesys_lock);
+#ifdef VM
+      force_load_and_pin(buffer, size);
+#endif
       f->eax = file_write(file, buffer, size);
+#ifdef VM
+      unpin_loaded_pages(buffer, size);
+#endif
       lock_release(&filesys_lock);
     }
   }
@@ -266,6 +287,26 @@ static size_t read_bytes (void *dest, void *src, size_t nb) {
   }
 
   return nb;
+}
+
+static void force_load_and_pin(uint8_t *buf, size_t size) {
+  uint8_t *upage;
+  for(upage = pg_round_down(buf); upage < buf + size; upage += PGSIZE) {
+    if(pagedir_get_page(thread_current()->pagedir, upage) == NULL) {
+      void *kpage = supt_load_page(thread_current(), upage);
+      ASSERT(kpage != NULL);
+      frame_set_pinned(kpage, true);
+    }
+  }
+}
+
+static void unpin_loaded_pages(uint8_t *buf, size_t size) {
+  uint8_t *upage;
+  for(upage = pg_round_down(buf); upage < buf + size; upage += PGSIZE) {
+    void *kpage = pagedir_get_page(thread_current()->pagedir, upage);
+    ASSERT(kpage != NULL);
+    frame_set_pinned(kpage, false);
+  }
 }
 
 void halt(void){

@@ -68,14 +68,14 @@ struct supte *supte_lookup_page(supt_t supt, void *upage) {
   return hash_entry(elem, struct supte, hash_elem);
 }
 
-bool supt_load_page(struct thread *thread, void *upage) {
+void *supt_load_page(struct thread *thread, void *upage) {
   // is entry available?
   struct supte *supte = supte_lookup_page(thread->supt, upage);
-  if(supte == NULL) return false;
+  if(supte == NULL) return NULL;
 
   // get me free page
   void *frame_page = frame_alloc(thread, PAL_USER);
-  if(frame_page == NULL) return false;
+  if(frame_page == NULL) return NULL;
 
   // load the page with data
   switch(supte->tag) {
@@ -97,12 +97,12 @@ bool supt_load_page(struct thread *thread, void *upage) {
   // translation remapping
   if(!pagedir_set_page(pd, upage, frame_page, writable)) {
     frame_free_hard(pd, frame_page);
-    return false;
+    return NULL;
   }
 
   pagedir_set_dirty(pd, frame_page, false);
 
-  return true;
+  return frame_page;
 }
 
 bool supt_set_swap_page(supt_t supt, void *upage, uint32_t swap_idx, bool writable) {
@@ -112,6 +112,8 @@ bool supt_set_swap_page(supt_t supt, void *upage, uint32_t swap_idx, bool writab
   supte->tag = P_SWAP;
   supte->data.swap.swap_idx = swap_idx;
   supte->writable = writable;
+
+  return true;
 }
 
 bool supt_install_zero_page(supt_t supt, void *upage) {
