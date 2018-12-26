@@ -1,3 +1,5 @@
+#include "frame.h"
+
 #include <list.h>
 #include <hash.h>
 #include "lib/debug.h"
@@ -6,8 +8,9 @@
 #include "threads/palloc.h"
 #include "threads/malloc.h"
 #include "threads/vaddr.h"
+#include "userprog/pagedir.h"
 
-#include "frame.h"
+#include "swap.h"
 
 /* frame table entry */
 struct fte {
@@ -21,6 +24,7 @@ struct fte {
 
   // initially true on creation
   bool pinned;
+  bool writable;
 
   // for hashmap
   struct hash_elem hash_elem;
@@ -36,6 +40,8 @@ struct lock frame_lock;
 static unsigned _frame_hash_func(struct hash_elem const *e, void *aux);
 static bool _frame_less_func(struct hash_elem const *a, struct hash_elem const *b, void *aux);
 
+static struct fte *select_victim_frame(void);
+
 void frame_init(void) {
   hash_init(&frame_table, _frame_hash_func, _frame_less_func, NULL);
   list_init(&frame_list);
@@ -43,14 +49,24 @@ void frame_init(void) {
   lock_init(&frame_lock);
 }
 
-void *frame_alloc(enum palloc_flags pflags) {
+void *frame_alloc(struct thread *thread, enum palloc_flags pflags) {
   ASSERT((pflags & PAL_USER) != 0);
 
   lock_acquire(&frame_lock);
 
   void *new_frame = palloc_get_page(pflags);
   if(new_frame == NULL) {
-    PANIC("- frame_alloc: swapping required");
+    struct fte *victim = select_victim_frame();
+
+    pagedir_clear_page(victim->pagedir, victim->upage);
+
+    uint32_t swap_idx = swap_out(victim->kpage);
+    supt_set_swap_page(thread->supt, victim->upage, swap_idx, victim->writable);
+
+    frame_free_hard(thread->pagedir, victim->kpage);
+
+    new_frame = palloc_get_page(pflags);
+    ASSERT(new_frame != NULL);
   }
 
   struct fte *entry = malloc(sizeof *entry);
@@ -58,8 +74,9 @@ void *frame_alloc(enum palloc_flags pflags) {
 
   entry->kpage = new_frame;
   entry->upage = NULL;
-  entry->pagedir = NULL;
+  entry->pagedir = thread->pagedir;
   entry->pinned = true;
+  entry->writable = false;
 
   hash_insert(&frame_table, &entry->hash_elem);
   list_push_back(&frame_list, &entry->list_elem);
@@ -69,7 +86,7 @@ void *frame_alloc(enum palloc_flags pflags) {
   return new_frame;
 }
 
-void frame_set_page(uint32_t *pd, void *upage, void *kpage) {
+void frame_set_page(uint32_t *pd, void *upage, void *kpage, bool writable) {
   lock_acquire(&frame_lock);
 
   struct fte lookup_e;
@@ -80,9 +97,10 @@ void frame_set_page(uint32_t *pd, void *upage, void *kpage) {
   }
 
   struct fte *entry = hash_entry(found, struct fte, hash_elem);
+  ASSERT(pd == entry->pagedir);
 
   entry->upage = upage;
-  entry->pagedir = pd;
+  entry->writable = writable;
 
   lock_release(&frame_lock);
 }
@@ -133,6 +151,11 @@ void frame_set_pinned(void *kpage, bool value) {
   found_e->pinned = value;
 
   lock_release(&frame_lock);
+}
+
+static struct fte *select_victim_frame(void) {
+  PANIC("I can't select victim :(");
+  return NULL;
 }
 
 static unsigned _frame_hash_func(struct hash_elem const *e, UNUSED void *aux) {

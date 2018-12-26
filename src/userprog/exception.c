@@ -186,7 +186,7 @@ page_fault (struct intr_frame *f)
     supt_install_zero_page(thread->supt, fault_page);
   }
 
-  if(! supt_load_page(thread->supt, thread->pagedir, fault_page)) {
+  if(! supt_load_page(thread, fault_page)) {
     goto DEATH;
   }
 

@@ -123,7 +123,7 @@ pagedir_set_page (uint32_t *pd, void *upage, void *kpage, bool writable)
       *pte = pte_create_user (kpage, writable);
 #ifdef VM
       // !!! Assume no ALIASES
-      frame_set_page(pd, upage, kpage);
+      frame_set_page(pd, upage, kpage, writable);
 #endif
       return true;
     }

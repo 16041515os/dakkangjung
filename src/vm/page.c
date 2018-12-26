@@ -3,6 +3,7 @@
 #include <debug.h>
 #include <hash.h>
 #include <string.h>
+#include <threads/thread.h>
 #include "threads/malloc.h"
 #include "threads/vaddr.h"
 #include "userprog/pagedir.h"
@@ -67,13 +68,13 @@ struct supte *supte_lookup_page(supt_t supt, void *upage) {
   return hash_entry(elem, struct supte, hash_elem);
 }
 
-bool supt_load_page(supt_t supt, uint32_t *pd, void *upage) {
+bool supt_load_page(struct thread *thread, void *upage) {
   // is entry available?
-  struct supte *supte = supte_lookup_page(supt, upage);
+  struct supte *supte = supte_lookup_page(thread->supt, upage);
   if(supte == NULL) return false;
 
   // get me free page
-  void *frame_page = frame_alloc(PAL_USER);
+  void *frame_page = frame_alloc(thread, PAL_USER);
   if(frame_page == NULL) return false;
 
   // load the page with data
@@ -91,6 +92,8 @@ bool supt_load_page(supt_t supt, uint32_t *pd, void *upage) {
 
   bool writable = supte->writable;
 
+  uint32_t *pd = thread->pagedir;
+
   // translation remapping
   if(!pagedir_set_page(pd, upage, frame_page, writable)) {
     frame_free_hard(pd, frame_page);
@@ -100,6 +103,15 @@ bool supt_load_page(supt_t supt, uint32_t *pd, void *upage) {
   pagedir_set_dirty(pd, frame_page, false);
 
   return true;
+}
+
+bool supt_set_swap_page(supt_t supt, void *upage, uint32_t swap_idx, bool writable) {
+  struct supte *supte = supte_lookup_page(supt, upage);
+  if(supte == NULL) return false;
+
+  supte->tag = P_SWAP;
+  supte->data.swap.swap_idx = swap_idx;
+  supte->writable = writable;
 }
 
 bool supt_install_zero_page(supt_t supt, void *upage) {

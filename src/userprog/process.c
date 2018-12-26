@@ -23,7 +23,7 @@
 #ifdef VM
 #include "vm/frame.h"
 #else
-#define frame_alloc(x) palloc_get_page(x)
+#define frame_alloc(y, x) palloc_get_page(x)
 #define frame_free_hard(y, x) palloc_free_page(x)
 #endif
 
@@ -638,7 +638,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
     size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
     /* Get a page of memory. */
-    uint8_t *knpage = frame_alloc (PAL_USER);
+    uint8_t *knpage = frame_alloc (thread_current(), PAL_USER);
     if (knpage == NULL)
       return false;
 
@@ -673,7 +673,7 @@ setup_stack (void **esp)
   uint8_t *kpage;
   bool success = false;
 
-  kpage = frame_alloc (PAL_USER | PAL_ZERO);
+  kpage = frame_alloc (thread_current(), PAL_USER | PAL_ZERO);
   if (kpage != NULL) 
   {
     success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
