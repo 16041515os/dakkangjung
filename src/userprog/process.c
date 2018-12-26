@@ -198,6 +198,10 @@ process_exit (void)
     palloc_free_page(cur->fdtable);
   }
 
+#ifdef VM
+  supt_destroy(cur->supt);
+#endif
+
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -363,6 +367,10 @@ load (const char *file_name, void (**eip) (void), void **esp)
   if (t->pagedir == NULL) 
     goto done;
   process_activate ();
+
+#ifdef VM
+  t->supt = supt_create();
+#endif
 
   command_len = strlen(file_name) + 1;
 

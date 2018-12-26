@@ -34,6 +34,8 @@ syscall_handler (struct intr_frame *f)
 
   read_bytes(&SYSCALL_NUM, f->esp, sizeof SYSCALL_NUM);
 
+  thread_current()->user_esp = f->esp;
+
   if(SYSCALL_NUM == SYS_HALT){
       halt();
   }
@@ -112,7 +114,6 @@ syscall_handler (struct intr_frame *f)
     read_bytes(&fd, f->esp + 4, sizeof fd);
     read_bytes(&buffer, f->esp + 8, sizeof buffer);
     read_bytes(&size, f->esp + 12, sizeof size);
-    if(size < 0) size = 0;
 
     if(fd == 1 || fd == 2) thread_exit(-1);
 
@@ -146,7 +147,6 @@ syscall_handler (struct intr_frame *f)
     read_bytes(&fd, f->esp + 4, sizeof fd);
     read_bytes(&buffer, f->esp + 8, sizeof buffer);
     read_bytes(&size, f->esp + 12, sizeof size);
-    if(size < 0) size = 0;
 
     if(fd == 0 || fd == 2) thread_exit(-1);
 

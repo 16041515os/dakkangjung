@@ -2,10 +2,15 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include "userprog/gdt.h"
+#include "userprog/pagedir.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
-#include "pagedir.h"
+#ifdef VM
+#include "vm/page.h"
+#endif
+
+#define MAX_STACK_SIZE (1u<<23)
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -159,7 +164,36 @@ page_fault (struct intr_frame *f)
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
-  
+
+#ifdef VM
+  void *fault_page = pg_round_down(fault_addr);
+  struct thread *thread = thread_current();
+
+  if(!not_present) {
+    // protected area cannot be accessed
+    goto DEATH;
+  }
+
+  // 4.3.3.
+  // user -> kernel, get esp from interrupt frame
+  // kernel -> kernel, get esp from thread struct
+  void *esp = user ? f->esp : thread->user_esp;
+
+  bool is_around_esp = esp <= fault_addr || esp - 4 == fault_addr || esp - 32 == fault_addr;
+  bool is_inside_ss = fault_addr < PHYS_BASE && fault_addr >= PHYS_BASE - MAX_STACK_SIZE;
+  if(is_around_esp && is_inside_ss) {
+    // grow stack
+    supt_install_zero_page(thread->supt, fault_page);
+  }
+
+  if(! supt_load_page(thread->supt, thread->pagedir, fault_page)) {
+    goto DEATH;
+  }
+
+  return;
+
+#endif
+
   /* (3.1.5) the second method */
   if(!user) {
     f->eip = (void *)f->eax;
@@ -167,31 +201,12 @@ page_fault (struct intr_frame *f)
     return;
   }
 
+DEATH:
+
   printf ("Page fault at %p: %s error %s page in %s context.\n",
           fault_addr,
           not_present ? "not present" : "rights violation",
           write ? "writing" : "reading",
           user ? "user" : "kernel");
   kill (f);
-
-  /*
-  size_t MAX_STACK_SIZE = 1 << 23; // 8MB
-
-  if(user == false) {
-    // KERNEL MUST NOT TRIGGER PAGE FAULT
-  }
-  // may be invalid reference
-  else if(not_present == true) {
-    // growable region
-    if(is_user_vaddr(fault_addr) && fault_addr < PHYS_BASE - MAX_STACK_SIZE) {
-    }
-    else {
-      // invalid reference
-      thread_exit(-1);
-    }
-  }
-  else {
-    thread_exit(-1);
-  }
-  */
 }

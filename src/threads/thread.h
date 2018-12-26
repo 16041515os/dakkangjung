@@ -5,6 +5,10 @@
 #include <list.h>
 #include <stdint.h>
 
+#ifdef VM
+#include "vm/page.h"
+#endif
+
 /* States in a thread's life cycle. */
 enum thread_status
   {
@@ -102,6 +106,13 @@ struct thread
     void **fdtable;                 /* file descriptor table */
     uint32_t nextfd;
     int32_t exit_status;
+    
+    // 4.3.3 user stack pointer
+    uint8_t *user_esp;
+#endif
+
+#ifdef VM
+    supt_t supt;    /* supplemental page table */
 #endif
 
     /* Owned by thread.c. */
