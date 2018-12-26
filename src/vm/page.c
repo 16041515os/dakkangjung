@@ -119,7 +119,7 @@ bool supt_install_zero_page(supt_t supt, void *upage) {
 
 static unsigned _supte_hash_func(const struct hash_elem *e, UNUSED void *aux) {
   struct supte *supte = hash_entry(e, struct supte, hash_elem);
-  return hash_bytes(supte->upage, sizeof supte->upage);
+  return hash_bytes(&supte->upage, sizeof supte->upage);
 }
 
 static bool _supte_less_func(struct hash_elem const *a, struct hash_elem const *b, UNUSED void *aux) {
