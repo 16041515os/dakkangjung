@@ -108,11 +108,11 @@ bool supt_install_zero_page(supt_t supt, void *upage) {
 
   supte->upage = upage;
   supte->tag = P_ZERO;
+  supte->writable = true;
 
   struct hash_elem *pe;
   pe = hash_insert(supt, &supte->hash_elem);
-
-  if(pe == NULL) PANIC("not expecting duplicate entry");
+  if(pe != NULL) PANIC("not expecting duplicate entry");
 
   return true;
 }
