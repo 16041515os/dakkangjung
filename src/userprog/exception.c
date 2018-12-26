@@ -179,11 +179,13 @@ page_fault (struct intr_frame *f)
   // kernel -> kernel, get esp from thread struct
   void *esp = user ? f->esp : thread->user_esp;
 
+  // printf("fault: %p, eip: %p\n", fault_addr, f->eip);
   bool is_around_esp = esp <= fault_addr || esp - 4 == fault_addr || esp - 32 == fault_addr;
   bool is_inside_ss = fault_addr < PHYS_BASE && fault_addr >= PHYS_BASE - MAX_STACK_SIZE;
   if(is_around_esp && is_inside_ss) {
     // grow stack
-    supt_install_zero_page(thread->supt, fault_page);
+    if(supte_lookup_page(thread->supt, fault_page) == false)
+      supt_install_zero_page(thread->supt, fault_page);
   }
 
   if(supt_load_page(thread, fault_page) == NULL) {
