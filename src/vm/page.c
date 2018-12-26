@@ -1,7 +1,7 @@
 #include "page.h"
 
+#include <stdio.h>
 #include <debug.h>
-#include <hash.h>
 #include <string.h>
 #include <threads/thread.h>
 #include "threads/malloc.h"
@@ -11,36 +11,6 @@
 #include "frame.h"
 #include "swap.h"
 
-enum supte_tag {
-  P_ZERO,
-  P_SWAP,
-  P_FILE
-};
-
-union supte_data {
-  struct {
-    uint32_t swap_idx;
-  } swap;
-
-  struct {
-    struct file *file;
-    off_t ofs;
-    uint32_t read_bytes;
-    uint32_t zero_bytes;
-  } file;
-};
-
-struct supte {
-  // hash key
-  void *upage;
-
-  // hash value
-  enum supte_tag tag;
-  union supte_data data;
-  bool writable;
-
-  struct hash_elem hash_elem;
-};
 
 static unsigned _supte_hash_func(const struct hash_elem *e, void *aux);
 static bool _supte_less_func(struct hash_elem const *a, struct hash_elem const *b, void *aux);
@@ -89,12 +59,15 @@ void *supt_load_page(struct thread *thread, void *upage) {
   // load the page with data
   switch(supte->tag) {
   case P_ZERO:
+    // printf("from zero\n");
     memset(frame_page, 0x00, PGSIZE);
     break;
   case P_SWAP:
+    // printf("from swap\n");
     swap_in(supte->data.swap.swap_idx, frame_page);
     break;
   case P_FILE:
+    // printf("from file\n");
     if(!load_page_from_file(supte, frame_page)) {
       frame_free_hard(thread->pagedir, frame_page);
       return false;
@@ -111,7 +84,8 @@ void *supt_load_page(struct thread *thread, void *upage) {
   }
 
   hash_delete(thread->supt, &supte->hash_elem);
-
+  _supte_free_func(&supte->hash_elem, NULL);
+  
   pagedir_set_dirty(pd, frame_page, false);
 
   frame_set_pinned(frame_page, false);
@@ -130,7 +104,9 @@ bool supt_install_swap_page(supt_t supt, void *upage, uint32_t swap_idx, bool wr
 
   struct hash_elem *pe;
   pe = hash_insert(supt, &supte->hash_elem);
-  if(pe != NULL) PANIC("not expecting duplicate entry");
+  if(pe != NULL) {
+    PANIC("not expecting duplicate entry");
+  }
 
   return true;
 }
@@ -145,7 +121,9 @@ bool supt_install_zero_page(supt_t supt, void *upage) {
 
   struct hash_elem *pe;
   pe = hash_insert(supt, &supte->hash_elem);
-  if(pe != NULL) PANIC("not expecting duplicate entry");
+  if(pe != NULL) {
+    PANIC("not expecting duplicate entry");
+  }
 
   return true;
 }

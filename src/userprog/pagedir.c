@@ -6,6 +6,7 @@
 #include "threads/pte.h"
 #include "threads/palloc.h"
 #ifdef VM
+#include <stdio.h>
 #include "vm/frame.h"
 #endif
 
@@ -203,8 +204,7 @@ pagedir_set_dirty (uint32_t *pd, const void *vpage, bool dirty)
    installed and the last time it was cleared.  Returns false if
    PD contains no PTE for VPAGE. */
 bool
-pagedir_is_accessed (uint32_t *pd, const void *vpage) 
-{
+pagedir_is_accessed (uint32_t *pd, const void *vpage) {
   uint32_t *pte = lookup_page (pd, vpage, false);
   return pte != NULL && (*pte & PTE_A) != 0;
 }

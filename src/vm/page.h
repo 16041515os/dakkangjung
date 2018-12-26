@@ -3,7 +3,39 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <hash.h>
 #include "filesys/off_t.h"
+
+enum supte_tag {
+  P_ZERO,
+  P_SWAP,
+  P_FILE
+};
+
+union supte_data {
+  struct {
+    uint32_t swap_idx;
+  } swap;
+
+  struct {
+    struct file *file;
+    off_t ofs;
+    uint32_t read_bytes;
+    uint32_t zero_bytes;
+  } file;
+};
+
+struct supte {
+  // hash key
+  void *upage;
+
+  // hash value
+  enum supte_tag tag;
+  union supte_data data;
+  bool writable;
+
+  struct hash_elem hash_elem;
+};
 
 struct thread;
 struct file;

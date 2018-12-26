@@ -10,6 +10,8 @@
 #include "threads/vaddr.h"
 #include "userprog/pagedir.h"
 
+#include <stdio.h>
+
 #include "swap.h"
 
 /* frame table entry */
@@ -20,7 +22,7 @@ struct fte {
   // hash value
   /* initially NULL, meaning KPAGE has no mapping */
   void *upage;
-  uint32_t *pagedir;
+  struct thread *thread;
 
   // initially true on creation
   bool pinned;
@@ -42,7 +44,7 @@ static unsigned _frame_hash_func(struct hash_elem const *e, void *aux);
 static bool _frame_less_func(struct hash_elem const *a, struct hash_elem const *b, void *aux);
 
 static struct fte *next_frame(void);
-static struct fte *select_victim_frame(uint32_t *pd);
+static struct fte *select_victim_frame(void);
 
 static void frame_free_hard_internal(uint32_t *pd, void *kpage);
 static void frame_entry_free_internal(uint32_t *pd, void *kpage);
@@ -62,15 +64,16 @@ void *frame_alloc(struct thread *thread, enum palloc_flags pflags) {
 
   void *new_frame = palloc_get_page(pflags);
   if(new_frame == NULL) {
-    uint32_t *pd = thread->pagedir;
-    struct fte *victim = select_victim_frame(pd);
+    PANIC("NO FRAME !!!");
+    struct fte *victim = select_victim_frame();
+    struct thread *victim_thr = victim->thread;
 
-    pagedir_clear_page(pd, victim->upage);
+    pagedir_clear_page(victim_thr->pagedir, victim->upage);
 
     uint32_t swap_idx = swap_out(victim->kpage);
-    supt_install_swap_page(thread->supt, victim->upage, swap_idx, victim->writable);
+    supt_install_swap_page(victim_thr->supt, victim->upage, swap_idx, victim->writable);
 
-    frame_free_hard_internal(thread->pagedir, victim->kpage);
+    frame_free_hard_internal(victim_thr->pagedir, victim->kpage);
 
     new_frame = palloc_get_page(pflags);
     ASSERT(new_frame != NULL);
@@ -81,7 +84,7 @@ void *frame_alloc(struct thread *thread, enum palloc_flags pflags) {
 
   entry->kpage = new_frame;
   entry->upage = NULL;
-  entry->pagedir = thread->pagedir;
+  entry->thread = thread;
   entry->pinned = true;
   entry->writable = false;
 
@@ -96,6 +99,8 @@ void *frame_alloc(struct thread *thread, enum palloc_flags pflags) {
 void frame_set_page(uint32_t *pd, void *upage, void *kpage, bool writable) {
   lock_acquire(&frame_lock);
 
+  ASSERT(pagedir_get_page(pd, upage) == kpage);
+
   struct fte lookup_e;
   lookup_e.kpage = kpage;
   struct hash_elem *found = hash_find(&frame_table, &lookup_e.hash_elem);
@@ -104,7 +109,7 @@ void frame_set_page(uint32_t *pd, void *upage, void *kpage, bool writable) {
   }
 
   struct fte *entry = hash_entry(found, struct fte, hash_elem);
-  ASSERT(pd == entry->pagedir);
+  ASSERT(pd == entry->thread->pagedir);
 
   entry->upage = upage;
   entry->writable = writable;
@@ -141,7 +146,7 @@ static void frame_entry_free_internal(uint32_t *pd, void *kpage) {
   }
 
   found_e = hash_entry(found, struct fte, hash_elem);
-  ASSERT(found_e->pagedir == pd);
+  ASSERT(found_e->thread->pagedir == pd);
 
   hash_delete(&frame_table, &found_e->hash_elem);
   list_remove(&found_e->list_elem);
@@ -169,25 +174,30 @@ void frame_set_pinned(void *kpage, bool value) {
 }
 
 static struct fte *next_frame() {
+  if (list_empty(&frame_list))
+    PANIC("Frame table is empty");
+
   if(frame_list_iter == NULL || frame_list_iter == list_end(&frame_list))
     frame_list_iter = list_begin(&frame_list);
   else
     frame_list_iter = list_next(frame_list_iter);
   
+  if(frame_list_iter == list_end(&frame_list)) frame_list_iter = list_begin(&frame_list);
+  
   return list_entry(frame_list_iter, struct fte, list_elem);
 }
 
-static struct fte *select_victim_frame(uint32_t *pd) {
+static struct fte *select_victim_frame() {
   size_t len = hash_size(&frame_table);
   ASSERT(len > 0);
 
   size_t i;
-  for(i=0; i<len<<1; ++i) {
+  for(i=0; i < len<<1; ++i) {
     struct fte *entry = next_frame();
     if(entry->pinned) continue;
 
-    if(pagedir_is_accessed(pd, entry->upage)) {
-      pagedir_set_accessed(pd, entry->upage, false);
+    if(pagedir_is_accessed(entry->thread->pagedir, entry->upage)) {
+      pagedir_set_accessed(entry->thread->pagedir, entry->upage, false);
       continue;
     }
 
