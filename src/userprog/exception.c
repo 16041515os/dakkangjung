@@ -192,6 +192,7 @@ page_fault (struct intr_frame *f)
 
   return;
 
+DEATH:
 #endif
 
   /* (3.1.5) the second method */
@@ -200,8 +201,6 @@ page_fault (struct intr_frame *f)
     f->eax = 0xffFFffFF;
     return;
   }
-
-DEATH:
 
   printf ("Page fault at %p: %s error %s page in %s context.\n",
           fault_addr,
