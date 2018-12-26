@@ -29,12 +29,11 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f) 
 { 
+  thread_current()->user_esp = f->esp;
   
   int SYSCALL_NUM;
 
   read_bytes(&SYSCALL_NUM, f->esp, sizeof SYSCALL_NUM);
-
-  thread_current()->user_esp = f->esp;
 
   if(SYSCALL_NUM == SYS_HALT){
       halt();
@@ -216,6 +215,10 @@ syscall_handler (struct intr_frame *f)
     read_bytes(&n4, f->esp + 16, sizeof n1);
 
     f->eax = sum_of_four_integers(n1,n2,n3,n4);
+  }
+  else {
+    // unknown syscall
+    thread_exit(-1);
   }
 
 }
