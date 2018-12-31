@@ -828,8 +828,8 @@ sub xsystem {
 
 		# Read and print out pipe data.
 		my ($len) = length ($buf);
-		waitpid ($pid, 0), last
-		  if sysread ($in, $buf, 4096, $len) <= 0;
+		my ($n_read) = sysread ($in, $buf, 4096, $len);
+		waitpid ($pid, 0), last if !defined ($n_read) || $n_read <= 0;
 		print substr ($buf, $len);
 
 		# Remove full lines from $buf and scan them for keywords.
@@ -854,7 +854,7 @@ sub xsystem {
 	alarm (0);
 	&$cleanup ();
 
-	if (WIFSIGNALED ($?) && WTERMSIG ($?) == SIGVTALRM ()) {
+	if (WIFSIGNALED ($?) && WTERMSIG ($?) == SIGVTALRM_number ()) {
 	    seek (STDOUT, 0, 2);
 	    print "\nTIMEOUT after $timeout seconds of host CPU time\n";
 	    exit 0;
@@ -909,7 +909,7 @@ sub get_load_average {
 # Calls setitimer to set a timeout, then execs what was passed to us.
 sub exec_setitimer {
     if (defined $timeout) {
-	if ($ ge 5.8.0) {
+	if ($^V ge 5.8.0) {
 	    eval "
               use Time::HiRes qw(setitimer ITIMER_VIRTUAL);
               setitimer (ITIMER_VIRTUAL, $timeout, 0);
@@ -925,7 +925,7 @@ sub exec_setitimer {
     exit (1);
 }
 
-sub SIGVTALRM {
+sub SIGVTALRM_number {
     use Config;
     my $i = 0;
     foreach my $name (split(' ', $Config{sig_name})) {
